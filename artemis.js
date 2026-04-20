@@ -122,27 +122,49 @@ function ensureCircularBubbleIcon(dfMessenger) {
 
 function autoOpenChatWindow(dfMessenger, bubbleNode, delayMs) {
     window.setTimeout(() => {
-        if (bubbleNode) {
-            bubbleNode.setAttribute("expand", "true");
-            if ("expand" in bubbleNode) {
-                bubbleNode.expand = true;
-            }
-
-            if (typeof bubbleNode.openChat === "function") {
-                bubbleNode.openChat();
-            }
-        }
-
-        if (dfMessenger) {
-            dfMessenger.setAttribute("expand", "true");
-            if ("expand" in dfMessenger) {
-                dfMessenger.expand = true;
-            }
-        }
-
-        tryOpenChatByClick(dfMessenger);
+        ensureChatOpened(dfMessenger, bubbleNode);
         scheduleAutoStartConversation(dfMessenger);
     }, delayMs);
+}
+
+function ensureChatOpened(dfMessenger, bubbleNode) {
+    if (openChatWindow(dfMessenger, bubbleNode)) {
+        return;
+    }
+
+    const retryOpen = () => {
+        openChatWindow(dfMessenger, bubbleNode);
+    };
+
+    window.addEventListener("df-messenger-loaded", retryOpen, { once: true });
+    window.setTimeout(retryOpen, 250);
+    window.setTimeout(retryOpen, 800);
+}
+
+function openChatWindow(dfMessenger, bubbleNode) {
+    let opened = false;
+
+    if (bubbleNode) {
+        bubbleNode.setAttribute("expand", "true");
+        if ("expand" in bubbleNode) {
+            bubbleNode.expand = true;
+        }
+
+        if (typeof bubbleNode.openChat === "function") {
+            bubbleNode.openChat();
+            opened = true;
+        }
+    }
+
+    if (dfMessenger) {
+        dfMessenger.setAttribute("expand", "true");
+        if ("expand" in dfMessenger) {
+            dfMessenger.expand = true;
+            opened = true;
+        }
+    }
+
+    return tryOpenChatByClick(dfMessenger) || opened;
 }
 
 function scheduleAutoStartConversation(dfMessenger) {
