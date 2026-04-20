@@ -1,6 +1,8 @@
 let personaRefreshTimer = null;
 let personaSequence = 0;
 let lastUserPersonaRenderAt = 0;
+let contactFormOpenTimer = null;
+let contactFormOpenPending = false;
 const PERSONA_TEXT_COLOR = "#8f1d56";
 const PERSONA_FONT_FAMILY = "Arial, sans-serif";
 const PERSONA_FONT_SIZE = "9px";
@@ -11,6 +13,7 @@ const PERSONA_OPACITY = "0.84";
 const USER_PERSONA_TOKEN = encodeURIComponent("🙂User");
 const BOT_PERSONA_TOKEN = encodeURIComponent("Bot 🤖");
 const CHAT_AUTO_OPEN_DELAY_MS = 5000;
+const CONTACT_FORM_OPEN_DELAY_MS = 3000;
 const CONTACT_FORM_OPEN_ACTION = "open_form";
 const CONTACT_FORM_ENDPOINT = "/contact-form-submissions";
 const API_BASE_URL_META_NAME = "artemis-api-base-url";
@@ -178,11 +181,15 @@ function attachPersonaHandlers(dfMessenger) {
             : [];
 
         if (shouldOpenContactForm(event)) {
-            openContactForm();
+            contactFormOpenPending = true;
         }
 
         if (messages.length > 0) {
             renderPersona(dfMessenger, "bot", "Bot 🤖");
+        }
+
+        if (contactFormOpenPending) {
+            scheduleContactFormOpen();
         }
     });
 }
@@ -291,6 +298,7 @@ function openContactForm() {
 
     form.classList.add("is-open");
     form.setAttribute("aria-hidden", "false");
+    contactFormOpenPending = false;
 }
 
 function closeContactForm() {
@@ -302,6 +310,22 @@ function closeContactForm() {
 
     form.classList.remove("is-open");
     form.setAttribute("aria-hidden", "true");
+}
+
+function scheduleContactFormOpen() {
+    if (contactFormOpenTimer) {
+        window.clearTimeout(contactFormOpenTimer);
+    }
+
+    contactFormOpenTimer = window.setTimeout(() => {
+        contactFormOpenTimer = null;
+
+        if (!contactFormOpenPending) {
+            return;
+        }
+
+        openContactForm();
+    }, CONTACT_FORM_OPEN_DELAY_MS);
 }
 
 function submitContactForm(event) {
