@@ -11,6 +11,56 @@ firebase_admin.initialize_app()
 db = firestore.client()
 
 
+def sanitize_contact_submission(payload):
+    payload = payload or {}
+
+    def get_clean_text(key):
+        value = payload.get(key, "")
+        return value.strip() if isinstance(value, str) else ""
+
+    return {
+        "name": get_clean_text("name"),
+        "email": get_clean_text("email"),
+        "mobile": get_clean_text("mobile"),
+        "message": get_clean_text("message"),
+    }
+
+
+def validate_contact_submission(data):
+    if not all(data.values()):
+        return "All fields are required."
+
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", data["email"]):
+        return "Please enter a valid email address."
+
+    if not re.fullmatch(r"[+()\-\s\d]{7,20}", data["mobile"]):
+        return "Please enter a valid mobile number."
+
+    return None
+
+
+@app.route("/contact-form-submissions", methods=["POST"])
+def create_contact_form_submission():
+    payload = request.get_json(silent=True) or {}
+    submission = sanitize_contact_submission(payload)
+    validation_error = validate_contact_submission(submission)
+
+    if validation_error:
+        return jsonify({"error": validation_error}), 400
+
+    submission["created_at"] = firestore.SERVER_TIMESTAMP
+    submission["source"] = "website_contact_form"
+
+    try:
+        document = db.collection("contact_form_submissions").document()
+        document.set(submission)
+    except Exception as exc:
+        print("Contact form Firestore write error:", exc)
+        return jsonify({"error": "Unable to save the contact form right now."}), 500
+
+    return jsonify({"message": "Submitted successfully.", "id": document.id}), 201
+
+
 def combine_days(days):
     day_order = [
         "Monday",

@@ -164,6 +164,21 @@ df-messenger {
   border-color: var(--artemis-brand-500);
 }
 
+.contact-form__status {
+  min-height: 1.25rem;
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--artemis-text-soft);
+}
+
+.contact-form__status.is-success {
+  color: #0f766e;
+}
+
+.contact-form__status.is-error {
+  color: #b91c1c;
+}
+
 .contact-form__button {
   border: 0;
   border-radius: 12px;
@@ -177,6 +192,11 @@ df-messenger {
 
 .contact-form__button--secondary {
   background: #dc2626;
+}
+
+.contact-form__button:disabled {
+  cursor: wait;
+  opacity: 0.7;
 }
 
 @media (max-width: 768px) {

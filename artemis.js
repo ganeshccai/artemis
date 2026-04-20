@@ -13,6 +13,7 @@ const BOT_PERSONA_TOKEN = encodeURIComponent("Bot 🤖");
 const CHAT_AUTO_OPEN_DELAY_MS = 5000;
 const CONTACT_FORM_OPEN_ACTION = "open_form";
 const CONTACT_FORM_TYPE = "contact_form";
+const CONTACT_FORM_ENDPOINT = "/contact-form-submissions";
 const CONTACT_FORM_DEFAULT_CONFIG = {
     title: "Contact Form",
     subtitle: "Please enter your details",
@@ -314,6 +315,7 @@ function openContactForm(config = CONTACT_FORM_DEFAULT_CONFIG) {
     const titleElement = document.getElementById("contact-form-title");
     const subtitleElement = document.getElementById("contact-form-subtitle");
     const submitButton = document.getElementById("contact-form-submit");
+    const statusElement = document.getElementById("contact-form-status");
 
     if (!contactForm) {
         return;
@@ -329,6 +331,11 @@ function openContactForm(config = CONTACT_FORM_DEFAULT_CONFIG) {
 
     if (submitButton) {
         submitButton.textContent = config.submitLabel;
+    }
+
+    if (statusElement) {
+        statusElement.textContent = "";
+        statusElement.classList.remove("is-success", "is-error");
     }
 
     contactForm.classList.add("is-open");
@@ -351,30 +358,75 @@ function submitContactForm(event) {
 
     const nameInput = document.getElementById("contact-name");
     const emailInput = document.getElementById("contact-email");
+    const mobileInput = document.getElementById("contact-mobile");
     const messageInput = document.getElementById("contact-message");
+    const submitButton = document.getElementById("contact-form-submit");
+    const statusElement = document.getElementById("contact-form-status");
 
     const formData = {
         name: nameInput ? nameInput.value.trim() : "",
         email: emailInput ? emailInput.value.trim() : "",
+        mobile: mobileInput ? mobileInput.value.trim() : "",
         message: messageInput ? messageInput.value.trim() : ""
     };
 
-    console.log("Form Data:", formData);
-    window.alert("Submitted successfully!");
-
-    if (nameInput) {
-        nameInput.value = "";
+    if (statusElement) {
+        statusElement.textContent = "Submitting...";
+        statusElement.classList.remove("is-success", "is-error");
     }
 
-    if (emailInput) {
-        emailInput.value = "";
+    if (submitButton) {
+        submitButton.disabled = true;
     }
 
-    if (messageInput) {
-        messageInput.value = "";
-    }
+    fetch(CONTACT_FORM_ENDPOINT, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(formData)
+    })
+        .then(async (response) => {
+            const payload = await response.json().catch(() => ({}));
 
-    closeContactForm();
+            if (!response.ok) {
+                throw new Error(payload.error || "Unable to submit the form.");
+            }
+
+            if (statusElement) {
+                statusElement.textContent = payload.message || "Submitted successfully.";
+                statusElement.classList.add("is-success");
+                statusElement.classList.remove("is-error");
+            }
+
+            if (nameInput) {
+                nameInput.value = "";
+            }
+
+            if (emailInput) {
+                emailInput.value = "";
+            }
+
+            if (mobileInput) {
+                mobileInput.value = "";
+            }
+
+            if (messageInput) {
+                messageInput.value = "";
+            }
+        })
+        .catch((error) => {
+            if (statusElement) {
+                statusElement.textContent = error.message || "Submission failed. Please try again.";
+                statusElement.classList.add("is-error");
+                statusElement.classList.remove("is-success");
+            }
+        })
+        .finally(() => {
+            if (submitButton) {
+                submitButton.disabled = false;
+            }
+        });
 }
 
 function renderUserPersona(dfMessenger) {
