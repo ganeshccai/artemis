@@ -347,10 +347,20 @@ function submitContactForm(event) {
         body: JSON.stringify(payload)
     })
         .then(async (response) => {
-            const responsePayload = await response.json().catch(() => ({}));
+            const responseText = await response.text();
+            let responsePayload = {};
+
+            try {
+                responsePayload = responseText ? JSON.parse(responseText) : {};
+            } catch {
+                responsePayload = {};
+            }
 
             if (!response.ok) {
-                throw new Error(responsePayload.error || "Unable to submit the form.");
+                const fallbackMessage = responseText
+                    ? `Unable to submit the form. HTTP ${response.status}: ${responseText.slice(0, 160)}`
+                    : `Unable to submit the form. HTTP ${response.status}`;
+                throw new Error(responsePayload.error || responsePayload.message || fallbackMessage);
             }
 
             if (status) {

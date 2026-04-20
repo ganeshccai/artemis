@@ -13,6 +13,14 @@ LEAD_DETAILS_COLLECTION = "leaddetails"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return response
+
+
 @app.route("/")
 def index():
     return send_from_directory(BASE_DIR, "Artemis_Hospital.html")
@@ -78,8 +86,11 @@ def extract_first_session_text(params, keys):
     return ""
 
 
-@app.route("/contact-form-submissions", methods=["POST"])
+@app.route("/contact-form-submissions", methods=["POST", "OPTIONS"])
 def create_contact_form_submission():
+    if request.method == "OPTIONS":
+        return ("", 204)
+
     payload = request.get_json(silent=True) or {}
     submission = sanitize_contact_submission(payload)
     validation_error = validate_contact_submission(submission)
