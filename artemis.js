@@ -123,51 +123,40 @@ function ensureCircularBubbleIcon(dfMessenger) {
 
 function autoOpenChatWindow(dfMessenger, bubbleNode, delayMs) {
     window.setTimeout(() => {
-        ensureChatOpened(dfMessenger, bubbleNode);
+        const attemptOpen = () => {
+            if (bubbleNode) {
+                bubbleNode.setAttribute("expand", "true");
+                if ("expand" in bubbleNode) {
+                    bubbleNode.expand = true;
+                }
+
+                if (typeof bubbleNode.openChat === "function") {
+                    bubbleNode.openChat();
+                }
+            }
+
+            if (dfMessenger) {
+                dfMessenger.setAttribute("expand", "true");
+                if ("expand" in dfMessenger) {
+                    dfMessenger.expand = true;
+                }
+            }
+
+            tryOpenChatByClick(dfMessenger);
+        };
+
+        attemptOpen();
+        window.setTimeout(() => {
+            if (!isChatWindowOpen) {
+                attemptOpen();
+            }
+        }, 300);
+        window.setTimeout(() => {
+            if (!isChatWindowOpen) {
+                attemptOpen();
+            }
+        }, 900);
     }, delayMs);
-}
-
-function ensureChatOpened(dfMessenger, bubbleNode) {
-    if (isChatWindowOpen) {
-        return;
-    }
-
-    let attempts = 0;
-    const maxAttempts = 8;
-    const retryDelayMs = 350;
-
-    const attemptOpen = () => {
-        if (isChatWindowOpen || attempts >= maxAttempts) {
-            return;
-        }
-
-        attempts += 1;
-        openChatWindow(dfMessenger, bubbleNode);
-
-        if (!isChatWindowOpen) {
-            window.setTimeout(attemptOpen, retryDelayMs);
-        }
-    };
-
-    window.addEventListener("df-messenger-loaded", attemptOpen, { once: true });
-    attemptOpen();
-}
-
-function openChatWindow(dfMessenger, bubbleNode) {
-    if (bubbleNode) {
-        if (typeof bubbleNode.openChat === "function") {
-            bubbleNode.openChat();
-        }
-    }
-
-    if (dfMessenger) {
-        dfMessenger.setAttribute("expand", "true");
-        if ("expand" in dfMessenger) {
-            dfMessenger.expand = true;
-        }
-    }
-
-    return tryOpenChatByClick(dfMessenger);
 }
 
 function scheduleAutoStartConversation(dfMessenger) {
