@@ -3,6 +3,7 @@ let personaSequence = 0;
 let lastUserPersonaRenderAt = 0;
 let contactFormOpenTimer = null;
 let contactFormOpenPending = false;
+let activeDfMessenger = null;
 const PERSONA_TEXT_COLOR = "#8f1d56";
 const PERSONA_FONT_FAMILY = "Arial, sans-serif";
 const PERSONA_FONT_SIZE = "9px";
@@ -27,6 +28,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
     setTimeout(() => {
         const df = document.createElement("df-messenger");
+        activeDfMessenger = df;
         df.setAttribute("project-id", "project001-474715");
         df.setAttribute("location", "us-central1");
         df.setAttribute("agent-id", "57dcbcf5-05fd-4556-90d4-3438bc6c28d9");
@@ -531,6 +533,8 @@ function submitContactForm(event) {
                 status.classList.remove("is-error");
             }
 
+            renderContactFormSubmissionResponse(payload.name, payload.mobile);
+
             if (nameInput) {
                 nameInput.value = "";
             }
@@ -561,6 +565,23 @@ function submitContactForm(event) {
                 submitButton.disabled = false;
             }
         });
+}
+
+function renderContactFormSubmissionResponse(name, mobile) {
+    if (!activeDfMessenger || typeof activeDfMessenger.renderCustomText !== "function") {
+        return;
+    }
+
+    const safeName = name || "-";
+    const safeMobile = mobile || "-";
+    const responseText = [
+        `Name - ${safeName}`,
+        `mobile - ${safeMobile}`,
+        "Thank You for sharing the details"
+    ].join("  \n");
+
+    renderPersona(activeDfMessenger, "bot", "Bot 🤖");
+    activeDfMessenger.renderCustomText(responseText, true);
 }
 
 
