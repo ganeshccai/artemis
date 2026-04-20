@@ -1,0 +1,97 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap");
+
+:root {
+  --artemis-bg-1: #e8f3f4;
+  --artemis-bg-2: #f7fbff;
+  --artemis-brand-900: #0f172a;
+  --artemis-brand-700: #0f766e;
+  --artemis-brand-500: #14b8a6;
+  --artemis-accent-200: #d7f2ef;
+  --artemis-surface: #ffffff;
+  --artemis-text: #0f172a;
+  --artemis-text-soft: #475569;
+  --artemis-border: #dbe5ec;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  background:
+    radial-gradient(1200px circle at 12% 14%, rgba(20, 184, 166, 0.14), transparent 52%),
+    radial-gradient(900px circle at 88% 84%, rgba(15, 118, 110, 0.13), transparent 48%),
+    linear-gradient(180deg, var(--artemis-bg-2), var(--artemis-bg-1));
+  color: var(--artemis-text);
+}
+
+df-messenger {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 999;
+  animation: artemis-fade-up 320ms ease-out;
+
+  --df-messenger-font-family: "Manrope", "Segoe UI", sans-serif;
+  --df-messenger-font-color: var(--artemis-text);
+  --df-messenger-primary-color: var(--artemis-brand-700);
+  --df-messenger-chat-background: #f4f8fa;
+
+  --df-messenger-message-bot-background: var(--artemis-surface);
+  --df-messenger-message-bot-font-color: var(--artemis-text);
+  --df-messenger-message-user-background: var(--artemis-brand-700);
+  --df-messenger-message-user-font-color: #f8fffe;
+
+  --df-messenger-message-stack-spacing: 6px;
+  --df-messenger-message-spacing: 8px;
+  --df-messenger-chat-padding: 12px;
+
+  --df-messenger-input-background: var(--artemis-surface);
+  --df-messenger-input-box-background: var(--artemis-surface);
+  --df-messenger-input-font-color: var(--artemis-text);
+  --df-messenger-input-border-top: 1px solid var(--artemis-border);
+
+  --df-messenger-chips-background: var(--artemis-accent-200);
+  --df-messenger-chips-font-color: var(--artemis-brand-900);
+  --df-messenger-chips-border-radius: 999px;
+  --df-messenger-button-border: 1px solid #bfe3dd;
+
+  --df-messenger-chat-border: 1px solid #cfe0e8;
+  --df-messenger-chat-box-shadow: 0 18px 52px rgba(15, 23, 42, 0.16);
+  --df-messenger-chat-border-radius: 18px;
+  --df-messenger-chat-window-width: 420px;
+  --df-messenger-chat-window-height: 620px;
+
+  --df-messenger-titlebar-background: linear-gradient(90deg, #0f766e, #0d9488);
+  --df-messenger-titlebar-font-color: #f0fdfa;
+  --df-messenger-titlebar-subtitle-font-color: #ccfbf1;
+  --df-messenger-titlebar-title-line-height: 36px;
+  --df-messenger-titlebar-icon-height: 50px;
+  --df-messenger-titlebar-icon-width: 50px;
+
+  --df-messenger-chat-bubble-icon-size: 64px;
+  --df-messenger-chat-bubble-background: linear-gradient(145deg, #0f766e, #0d9488);
+  --df-messenger-chat-icon-radius: 50%;
+}
+
+@keyframes artemis-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 768px) {
+  df-messenger {
+    right: 10px;
+    bottom: 10px;
+    --df-messenger-chat-window-width: min(94vw, 420px);
+    --df-messenger-chat-window-height: min(78vh, 620px);
+    --df-messenger-chat-border-radius: 16px;
+  }
+}
