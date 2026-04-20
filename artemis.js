@@ -13,6 +13,7 @@ const BOT_PERSONA_TOKEN = encodeURIComponent("Bot 🤖");
 const CHAT_AUTO_OPEN_DELAY_MS = 5000;
 const CONTACT_FORM_OPEN_ACTION = "open_form";
 const CONTACT_FORM_ENDPOINT = "/contact-form-submissions";
+const API_BASE_URL_META_NAME = "artemis-api-base-url";
 
 window.addEventListener("DOMContentLoaded", () => {
     initializeContactForm();
@@ -404,7 +405,27 @@ function getContactFormEndpoint() {
         return null;
     }
 
-    return new URL(CONTACT_FORM_ENDPOINT, window.location.href).toString();
+    const configuredBaseUrl = getConfiguredApiBaseUrl();
+    const baseUrl = configuredBaseUrl || window.location.origin;
+
+    return new URL(CONTACT_FORM_ENDPOINT, `${baseUrl.replace(/\/$/, "")}/`).toString();
+}
+
+function getConfiguredApiBaseUrl() {
+    const globalBaseUrl = typeof window.ARTEMIS_API_BASE_URL === "string"
+        ? window.ARTEMIS_API_BASE_URL.trim()
+        : "";
+
+    if (globalBaseUrl) {
+        return globalBaseUrl;
+    }
+
+    const metaTag = document.querySelector(`meta[name="${API_BASE_URL_META_NAME}"]`);
+    const metaBaseUrl = metaTag && typeof metaTag.content === "string"
+        ? metaTag.content.trim()
+        : "";
+
+    return metaBaseUrl || "";
 }
 
 function renderUserPersona(dfMessenger) {
