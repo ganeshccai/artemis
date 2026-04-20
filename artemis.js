@@ -13,6 +13,8 @@ const PERSONA_OPACITY = "0.84";
 const USER_PERSONA_TOKEN = encodeURIComponent("🙂User");
 const BOT_PERSONA_TOKEN = encodeURIComponent("Bot 🤖");
 const CHAT_AUTO_OPEN_DELAY_MS = 5000;
+const CHAT_CLIENT_CONTEXT_ENDPOINT = "/chat-client-context";
+const CHAT_CLIENT_CONTEXT_STORAGE_KEY = "artemis_chat_client_context";
 const CONTACT_FORM_OPEN_DELAY_MS = 3000;
 const CONTACT_FORM_OPEN_ACTION = "open_form";
 const CONTACT_FORM_ENDPOINT = "/contact-form-submissions";
@@ -20,6 +22,7 @@ const API_BASE_URL_META_NAME = "artemis-api-base-url";
 
 window.addEventListener("DOMContentLoaded", () => {
     initializeContactForm();
+    initializeClientContextCapture();
 
     setTimeout(() => {
         const df = document.createElement("df-messenger");
@@ -207,6 +210,26 @@ function initializeContactForm() {
     }
 }
 
+function initializeClientContextCapture() {
+    const endpoint = getApiEndpoint(CHAT_CLIENT_CONTEXT_ENDPOINT);
+    const clientContext = getClientContext();
+
+    if (!endpoint || !clientContext.client_session_id) {
+        return;
+    }
+
+    fetch(endpoint, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ client_context: clientContext }),
+        keepalive: true
+    }).catch(() => {
+        // Ignore telemetry failures so the chat UI stays responsive.
+    });
+}
+
 function shouldOpenContactForm(event) {
     const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
         && Array.isArray(event.detail.raw.queryResult.responseMessages)
@@ -342,9 +365,10 @@ function submitContactForm(event) {
         name: nameInput ? nameInput.value.trim() : "",
         mobile: mobileInput ? mobileInput.value.trim() : "",
         email: emailInput ? emailInput.value.trim() : "",
-        message: messageInput ? messageInput.value.trim() : ""
+        message: messageInput ? messageInput.value.trim() : "",
+        client_context: getClientContext()
     };
-    const endpoint = getContactFormEndpoint();
+    const endpoint = getApiEndpoint(CONTACT_FORM_ENDPOINT);
 
     if (!endpoint) {
         if (status) {
@@ -425,7 +449,7 @@ function submitContactForm(event) {
 }
 
 
-function getContactFormEndpoint() {
+function getApiEndpoint(pathname) {
     if (window.location.protocol === "file:") {
         return null;
     }
@@ -433,7 +457,7 @@ function getContactFormEndpoint() {
     const configuredBaseUrl = getConfiguredApiBaseUrl();
     const baseUrl = configuredBaseUrl || window.location.origin;
 
-    return new URL(CONTACT_FORM_ENDPOINT, `${baseUrl.replace(/\/$/, "")}/`).toString();
+    return new URL(pathname, `${baseUrl.replace(/\/$/, "")}/`).toString();
 }
 
 function getConfiguredApiBaseUrl() {
@@ -451,6 +475,178 @@ function getConfiguredApiBaseUrl() {
         : "";
 
     return metaBaseUrl || "";
+}
+
+function getClientContext() {
+    const storedContext = readStoredClientContext();
+    const userAgent = navigator.userAgent || "";
+    const browserName = detectBrowserName(userAgent);
+    const browserVersion = detectBrowserVersion(userAgent);
+    const osName = detectOperatingSystem(userAgent, navigator.platform || "");
+    const deviceType = detectDeviceType(userAgent);
+    const clientContext = {
+        ...storedContext,
+        client_session_id: storedContext.client_session_id || createClientSessionId(),
+        source_url: window.location.href || "",
+        page_origin: window.location.origin || "",
+        page_path: window.location.pathname || "",
+        page_hostname: window.location.hostname || "",
+        referrer_url: document.referrer || "",
+        user_agent: userAgent,
+        browser_name: browserName,
+        browser_version: browserVersion,
+        os_name: osName,
+        device_type: deviceType,
+        device_name: buildDeviceName(deviceType, osName, browserName),
+        browser_language: navigator.language || "",
+        browser_languages: Array.isArray(navigator.languages)
+            ? navigator.languages.filter((value) => typeof value === "string" && value.trim())
+            : [],
+        platform: navigator.platform || "",
+        timezone: getBrowserTimeZone(),
+        screen_resolution: getScreenResolution(),
+        viewport_size: `${window.innerWidth || 0}x${window.innerHeight || 0}`
+    };
+
+    persistClientContext(clientContext);
+    return clientContext;
+}
+
+function readStoredClientContext() {
+    try {
+        const rawValue = window.sessionStorage.getItem(CHAT_CLIENT_CONTEXT_STORAGE_KEY);
+        if (!rawValue) {
+            return {};
+        }
+
+        const parsedValue = JSON.parse(rawValue);
+        return parsedValue && typeof parsedValue === "object" ? parsedValue : {};
+    } catch {
+        return {};
+    }
+}
+
+function persistClientContext(clientContext) {
+    try {
+        window.sessionStorage.setItem(
+            CHAT_CLIENT_CONTEXT_STORAGE_KEY,
+            JSON.stringify(clientContext)
+        );
+    } catch {
+        // Session storage can fail in privacy-restricted browsers.
+    }
+}
+
+function createClientSessionId() {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+        return window.crypto.randomUUID();
+    }
+
+    return `chat-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function detectBrowserName(userAgent) {
+    const browserMatchers = [
+        [/Edg\/([\d.]+)/, "Edge"],
+        [/OPR\/([\d.]+)/, "Opera"],
+        [/Chrome\/([\d.]+)/, "Chrome"],
+        [/Firefox\/([\d.]+)/, "Firefox"],
+        [/Version\/([\d.]+).*Safari/, "Safari"],
+        [/MSIE\s([\d.]+)/, "Internet Explorer"],
+        [/Trident\/.*rv:([\d.]+)/, "Internet Explorer"]
+    ];
+
+    for (const [matcher, browserName] of browserMatchers) {
+        if (matcher.test(userAgent)) {
+            return browserName;
+        }
+    }
+
+    return "Unknown";
+}
+
+function detectBrowserVersion(userAgent) {
+    const versionMatchers = [
+        /Edg\/([\d.]+)/,
+        /OPR\/([\d.]+)/,
+        /Chrome\/([\d.]+)/,
+        /Firefox\/([\d.]+)/,
+        /Version\/([\d.]+).*Safari/,
+        /MSIE\s([\d.]+)/,
+        /Trident\/.*rv:([\d.]+)/
+    ];
+
+    for (const matcher of versionMatchers) {
+        const match = userAgent.match(matcher);
+        if (match && match[1]) {
+            return match[1];
+        }
+    }
+
+    return "";
+}
+
+function detectOperatingSystem(userAgent, platform) {
+    const normalizedUserAgent = userAgent.toLowerCase();
+    const normalizedPlatform = platform.toLowerCase();
+
+    if (normalizedUserAgent.includes("windows") || normalizedPlatform.includes("win")) {
+        return "Windows";
+    }
+
+    if (normalizedUserAgent.includes("android")) {
+        return "Android";
+    }
+
+    if (/iphone|ipad|ipod/.test(normalizedUserAgent)) {
+        return "iOS";
+    }
+
+    if (normalizedUserAgent.includes("mac os") || normalizedPlatform.includes("mac")) {
+        return "macOS";
+    }
+
+    if (normalizedUserAgent.includes("linux") || normalizedPlatform.includes("linux")) {
+        return "Linux";
+    }
+
+    return "Unknown";
+}
+
+function detectDeviceType(userAgent) {
+    const normalizedUserAgent = userAgent.toLowerCase();
+
+    if (/ipad|tablet/.test(normalizedUserAgent)) {
+        return "tablet";
+    }
+
+    if (/mobi|iphone|android/.test(normalizedUserAgent)) {
+        return "mobile";
+    }
+
+    return "desktop";
+}
+
+function buildDeviceName(deviceType, osName, browserName) {
+    return [deviceType, osName, browserName]
+        .filter((value) => typeof value === "string" && value && value !== "Unknown")
+        .join(" / ");
+}
+
+function getBrowserTimeZone() {
+    try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    } catch {
+        return "";
+    }
+}
+
+function getScreenResolution() {
+    if (!window.screen) {
+        return "";
+    }
+
+    return `${window.screen.width || 0}x${window.screen.height || 0}`;
 }
 
 function renderUserPersona(dfMessenger) {

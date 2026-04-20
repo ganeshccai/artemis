@@ -10,6 +10,7 @@ app = Flask(__name__)
 firebase_admin.initialize_app()
 db = firestore.client()
 LEAD_DETAILS_COLLECTION = "leaddetails"
+CHAT_CLIENT_CONTEXT_COLLECTION = "chat_client_contexts"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONTACT_FIELD_ALIASES = {
     "name": ["name", "full_name", "contact_name", "patientname"],
@@ -17,6 +18,26 @@ CONTACT_FIELD_ALIASES = {
     "mobile": ["mobile", "phone", "phone_number", "contact_mobile", "patientmobile"],
     "message": ["message", "notes", "query", "contact_message", "patientmessage"],
 }
+CLIENT_CONTEXT_FIELDS = (
+    "client_session_id",
+    "source_url",
+    "page_origin",
+    "page_path",
+    "page_hostname",
+    "referrer_url",
+    "user_agent",
+    "browser_name",
+    "browser_version",
+    "os_name",
+    "device_type",
+    "device_name",
+    "browser_language",
+    "browser_languages",
+    "platform",
+    "timezone",
+    "screen_resolution",
+    "viewport_size",
+)
 
 
 @app.after_request
@@ -71,6 +92,46 @@ def sanitize_contact_submission(payload):
     }
 
 
+def sanitize_string_list(values):
+    if not isinstance(values, list):
+        return []
+
+    return [clean_text_value(value) for value in values if clean_text_value(value)]
+
+
+def sanitize_client_context(payload):
+    payload = payload or {}
+    context = payload.get("client_context") if isinstance(payload.get("client_context"), dict) else payload
+
+    sanitized = {}
+    for field_name in CLIENT_CONTEXT_FIELDS:
+        value = context.get(field_name)
+        if field_name == "browser_languages":
+            sanitized[field_name] = sanitize_string_list(value)
+        else:
+            sanitized[field_name] = clean_text_value(value)
+
+    return sanitized
+
+
+def compact_dict(values):
+    compacted = {}
+
+    for key, value in values.items():
+        if isinstance(value, dict):
+            nested = compact_dict(value)
+            if nested:
+                compacted[key] = nested
+        elif isinstance(value, list):
+            filtered = [item for item in value if item not in (None, "", [], {})]
+            if filtered:
+                compacted[key] = filtered
+        elif value not in (None, ""):
+            compacted[key] = value
+
+    return compacted
+
+
 def validate_contact_submission(data):
     if not data["name"]:
         return "Name is required."
@@ -85,6 +146,69 @@ def validate_contact_submission(data):
         return "Please enter a valid mobile number."
 
     return None
+
+
+def get_request_ip_address(req):
+    forwarded_headers = (
+        "X-Forwarded-For",
+        "X-Real-IP",
+        "CF-Connecting-IP",
+        "True-Client-IP",
+    )
+
+    for header_name in forwarded_headers:
+        header_value = clean_text_value(req.headers.get(header_name, ""))
+        if not header_value:
+            continue
+
+        return header_value.split(",")[0].strip()
+
+    return clean_text_value(req.remote_addr)
+
+
+def build_request_context(req, client_context):
+    return compact_dict(
+        {
+            "client_session_id": client_context.get("client_session_id", ""),
+            "source_url": client_context.get("source_url", "")
+            or clean_text_value(req.headers.get("Origin", ""))
+            or clean_text_value(req.referrer),
+            "page_origin": client_context.get("page_origin", "")
+            or clean_text_value(req.headers.get("Origin", "")),
+            "page_path": client_context.get("page_path", ""),
+            "page_hostname": client_context.get("page_hostname", ""),
+            "referrer_url": client_context.get("referrer_url", "")
+            or clean_text_value(req.referrer),
+            "user_agent": client_context.get("user_agent", "")
+            or clean_text_value(req.headers.get("User-Agent", "")),
+            "browser_name": client_context.get("browser_name", ""),
+            "browser_version": client_context.get("browser_version", ""),
+            "os_name": client_context.get("os_name", ""),
+            "device_type": client_context.get("device_type", ""),
+            "device_name": client_context.get("device_name", ""),
+            "browser_language": client_context.get("browser_language", ""),
+            "browser_languages": client_context.get("browser_languages", []),
+            "platform": client_context.get("platform", ""),
+            "timezone": client_context.get("timezone", ""),
+            "screen_resolution": client_context.get("screen_resolution", ""),
+            "viewport_size": client_context.get("viewport_size", ""),
+            "ip_address": get_request_ip_address(req),
+        }
+    )
+
+
+def save_chat_client_context(client_context, request_context):
+    client_session_id = client_context.get("client_session_id", "")
+    if not client_session_id:
+        return None
+
+    document = db.collection(CHAT_CLIENT_CONTEXT_COLLECTION).document(client_session_id)
+    firestore_payload = {
+        **request_context,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+    }
+    document.set(firestore_payload, merge=True)
+    return client_session_id
 
 
 def extract_session_text(params, key):
@@ -119,6 +243,30 @@ def save_contact_submission(submission, source, document_id=None, extra_fields=N
     return document.id
 
 
+@app.route("/chat-client-context", methods=["POST", "OPTIONS"])
+def create_chat_client_context():
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        payload = request.form.to_dict(flat=True)
+
+    client_context = sanitize_client_context(payload)
+    client_session_id = client_context.get("client_session_id", "")
+
+    if not client_session_id:
+        return jsonify({"error": "client_session_id is required."}), 400
+
+    try:
+        save_chat_client_context(client_context, build_request_context(request, client_context))
+    except Exception as exc:
+        print("Chat client context Firestore write error:", exc)
+        return jsonify({"error": "Unable to save the chat context right now."}), 500
+
+    return jsonify({"message": "Captured successfully.", "id": client_session_id}), 201
+
+
 @app.route("/contact-form-submissions", methods=["POST", "OPTIONS"])
 def create_contact_form_submission():
     if request.method == "OPTIONS":
@@ -129,13 +277,20 @@ def create_contact_form_submission():
         payload = request.form.to_dict(flat=True)
 
     submission = sanitize_contact_submission(payload)
+    client_context = sanitize_client_context(payload)
+    request_context = build_request_context(request, client_context)
     validation_error = validate_contact_submission(submission)
 
     if validation_error:
         return jsonify({"error": validation_error}), 400
 
     try:
-        document_id = save_contact_submission(submission, "website_contact_form")
+        save_chat_client_context(client_context, request_context)
+        document_id = save_contact_submission(
+            submission,
+            "website_contact_form",
+            extra_fields=request_context,
+        )
     except Exception as exc:
         print("Contact form Firestore write error:", exc)
         return jsonify({"error": "Unable to save the contact form right now."}), 500
