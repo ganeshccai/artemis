@@ -400,6 +400,7 @@ function submitContactForm(event) {
         });
 }
 
+
 function getContactFormEndpoint() {
     if (window.location.protocol === "file:") {
         return null;
