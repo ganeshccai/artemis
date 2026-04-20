@@ -28,5 +28,3 @@ options:
 
 images:
   - 'gcr.io/$PROJECT_ID/artemis:$SHORT_SHA'
-
-  
