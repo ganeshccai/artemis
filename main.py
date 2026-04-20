@@ -11,6 +11,12 @@ firebase_admin.initialize_app()
 db = firestore.client()
 LEAD_DETAILS_COLLECTION = "leaddetails"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONTACT_FIELD_ALIASES = {
+    "name": ["name", "full_name", "contact_name", "patientname"],
+    "email": ["email", "email_address", "contact_email", "patientemail"],
+    "mobile": ["mobile", "phone", "phone_number", "contact_mobile", "patientmobile"],
+    "message": ["message", "notes", "query", "contact_message", "patientmessage"],
+}
 
 
 @app.after_request
@@ -40,29 +46,42 @@ def artemis_js():
     return send_from_directory(BASE_DIR, "artemis.js")
 
 
+def clean_text_value(value):
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
+def extract_first_value(payload, keys):
+    for key in keys:
+        value = clean_text_value(payload.get(key, ""))
+        if value:
+            return value
+    return ""
+
+
 def sanitize_contact_submission(payload):
     payload = payload or {}
 
-    def get_clean_text(key):
-        value = payload.get(key, "")
-        return value.strip() if isinstance(value, str) else ""
-
     return {
-        "name": get_clean_text("name"),
-        "email": get_clean_text("email"),
-        "mobile": get_clean_text("mobile"),
-        "message": get_clean_text("message"),
+        field_name: extract_first_value(payload, aliases)
+        for field_name, aliases in CONTACT_FIELD_ALIASES.items()
     }
 
 
 def validate_contact_submission(data):
-    if not all(data.values()):
-        return "All fields are required."
+    if not data["name"]:
+        return "Name is required."
 
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", data["email"]):
+    if not data["mobile"] and not data["email"]:
+        return "Please provide a mobile number or email address."
+
+    if data["email"] and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", data["email"]):
         return "Please enter a valid email address."
 
-    if not re.fullmatch(r"[+()\-\s\d]{7,20}", data["mobile"]):
+    if data["mobile"] and not re.fullmatch(r"[+()\-\s\d]{7,20}", data["mobile"]):
         return "Please enter a valid mobile number."
 
     return None
@@ -70,11 +89,7 @@ def validate_contact_submission(data):
 
 def extract_session_text(params, key):
     value = params.get(key, "")
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value.strip()
-    return str(value).strip()
+    return clean_text_value(value)
 
 
 def extract_first_session_text(params, keys):
@@ -85,29 +100,47 @@ def extract_first_session_text(params, keys):
     return ""
 
 
+def save_contact_submission(submission, source, document_id=None, extra_fields=None):
+    firestore_payload = {
+        **submission,
+        "created_at": firestore.SERVER_TIMESTAMP,
+        "source": source,
+    }
+
+    if extra_fields:
+        firestore_payload.update(extra_fields)
+
+    document = (
+        db.collection(LEAD_DETAILS_COLLECTION).document(document_id)
+        if document_id
+        else db.collection(LEAD_DETAILS_COLLECTION).document()
+    )
+    document.set(firestore_payload)
+    return document.id
+
+
 @app.route("/contact-form-submissions", methods=["POST", "OPTIONS"])
 def create_contact_form_submission():
     if request.method == "OPTIONS":
         return ("", 204)
 
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        payload = request.form.to_dict(flat=True)
+
     submission = sanitize_contact_submission(payload)
     validation_error = validate_contact_submission(submission)
 
     if validation_error:
         return jsonify({"error": validation_error}), 400
 
-    submission["created_at"] = firestore.SERVER_TIMESTAMP
-    submission["source"] = "website_contact_form"
-
     try:
-        document = db.collection(LEAD_DETAILS_COLLECTION).document()
-        document.set(submission)
+        document_id = save_contact_submission(submission, "website_contact_form")
     except Exception as exc:
         print("Contact form Firestore write error:", exc)
         return jsonify({"error": "Unable to save the contact form right now."}), 500
 
-    return jsonify({"message": "Submitted successfully.", "id": document.id}), 201
+    return jsonify({"message": "Submitted successfully.", "id": document_id}), 201
 
 
 def combine_days(days):
@@ -200,12 +233,7 @@ def webhook():
         )
 
     elif tag == "save_contact_form":
-        submission = {
-            "name": extract_first_session_text(params, ["patientname", "contact_name", "name"]),
-            "email": extract_first_session_text(params, ["patientemail", "contact_email", "email"]),
-            "mobile": extract_first_session_text(params, ["patientmobile", "contact_mobile", "mobile", "phone"]),
-            "message": extract_first_session_text(params, ["patientmessage", "contact_message", "message"]),
-        }
+        submission = sanitize_contact_submission(params)
         validation_error = validate_contact_submission(submission)
 
         if validation_error:
@@ -223,15 +251,13 @@ def webhook():
                 }
             )
 
-        firestore_payload = {
-            **submission,
-            "created_at": firestore.SERVER_TIMESTAMP,
-            "source": "dialogflow_cx_chatflow",
-            "session": session,
-        }
-
         try:
-            db.collection(LEAD_DETAILS_COLLECTION).document(session).set(firestore_payload)
+            save_contact_submission(
+                submission,
+                "dialogflow_cx_chatflow",
+                document_id=session,
+                extra_fields={"session": session},
+            )
         except Exception as exc:
             print("Contact form Firestore write error:", exc)
             return jsonify(
