@@ -88,10 +88,11 @@ df-messenger {
 
 @media (max-width: 768px) {
   df-messenger {
-    right: 10px;
+    left: 12px;
+    right: 12px;
     bottom: 10px;
-    --df-messenger-chat-window-width: min(94vw, 420px);
-    --df-messenger-chat-window-height: min(78vh, 620px);
+    --df-messenger-chat-window-width: calc(100vw - 24px);
+    --df-messenger-chat-window-height: calc(100dvh - 24px);
     --df-messenger-chat-border-radius: 16px;
   }
 }

@@ -19,6 +19,7 @@ const CONTACT_FORM_OPEN_DELAY_MS = 3000;
 const CONTACT_FORM_OPEN_ACTION = "open_form";
 const CONTACT_FORM_ENDPOINT = "/contact-form-submissions";
 const API_BASE_URL_META_NAME = "artemis-api-base-url";
+const MOBILE_CHAT_BREAKPOINT_PX = 768;
 
 window.addEventListener("DOMContentLoaded", () => {
     initializeContactForm();
@@ -45,6 +46,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
         ensureCircularBubbleIcon(df);
         autoOpenChatWindow(df, bubble, CHAT_AUTO_OPEN_DELAY_MS);
+        initializeMobileChatLayout(df);
         attachPersonaHandlers(df);
         startPersonaDecorator(df);
     }, 1000);
@@ -160,6 +162,55 @@ function tryOpenChatByClick(dfMessenger) {
     }
 
     return false;
+}
+
+function initializeMobileChatLayout(dfMessenger) {
+    if (!dfMessenger) {
+        return;
+    }
+
+    const applyLayout = () => {
+        if (!isMobileViewport()) {
+            dfMessenger.style.removeProperty("--df-messenger-chat-window-width");
+            dfMessenger.style.removeProperty("--df-messenger-chat-window-height");
+            dfMessenger.style.removeProperty("right");
+            dfMessenger.style.removeProperty("left");
+            dfMessenger.style.removeProperty("bottom");
+            return;
+        }
+
+        const viewport = window.visualViewport;
+        const viewportWidth = viewport ? viewport.width : window.innerWidth;
+        const viewportHeight = viewport ? viewport.height : window.innerHeight;
+        const horizontalInset = 12;
+        const bottomInset = 10;
+        const topInset = 14;
+        const availableWidth = Math.max(280, Math.floor(viewportWidth - horizontalInset * 2));
+        const availableHeight = Math.max(340, Math.floor(viewportHeight - topInset - bottomInset));
+
+        dfMessenger.style.setProperty("right", `${horizontalInset}px`);
+        dfMessenger.style.setProperty("left", `${horizontalInset}px`);
+        dfMessenger.style.setProperty("bottom", `${bottomInset}px`);
+        dfMessenger.style.setProperty("--df-messenger-chat-window-width", `${availableWidth}px`);
+        dfMessenger.style.setProperty("--df-messenger-chat-window-height", `${availableHeight}px`);
+    };
+
+    applyLayout();
+    window.addEventListener("resize", applyLayout);
+
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", applyLayout);
+        window.visualViewport.addEventListener("scroll", applyLayout);
+    }
+
+    document.addEventListener("focusin", applyLayout);
+    document.addEventListener("focusout", () => {
+        window.setTimeout(applyLayout, 120);
+    });
+}
+
+function isMobileViewport() {
+    return window.innerWidth <= MOBILE_CHAT_BREAKPOINT_PX;
 }
 
 function attachPersonaHandlers(dfMessenger) {
