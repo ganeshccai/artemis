@@ -10,6 +10,22 @@
   <link rel="stylesheet" href="artemis.css">
 </head>
 <body>
+  <section id="contact-form" class="contact-form" aria-hidden="true">
+    <div class="contact-form__card">
+      <h2 id="contact-form-title" class="contact-form__title">Contact Form</h2>
+      <p id="contact-form-subtitle" class="contact-form__subtitle">Please enter your details</p>
+      <form id="contact-form-fields" class="contact-form__fields">
+        <label class="contact-form__label" for="contact-name">Name</label>
+        <input id="contact-name" name="name" type="text" placeholder="Name" autocomplete="name">
+        <label class="contact-form__label" for="contact-email">Email</label>
+        <input id="contact-email" name="email" type="email" placeholder="Email" autocomplete="email">
+        <label class="contact-form__label" for="contact-message">Message</label>
+        <textarea id="contact-message" name="message" placeholder="Message" rows="4"></textarea>
+        <button id="contact-form-submit" type="submit" class="contact-form__button">Submit</button>
+        <button type="button" id="contact-form-close" class="contact-form__button contact-form__button--secondary">Close</button>
+      </form>
+    </div>
+  </section>
   <script src="https://www.gstatic.com/dialogflow-console/fast/df-messenger/prod/v1/df-messenger.js"></script>
   <script src="artemis.js"></script>
 </body>

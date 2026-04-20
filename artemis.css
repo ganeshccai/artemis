@@ -95,3 +95,95 @@ df-messenger {
     --df-messenger-chat-border-radius: 16px;
   }
 }
+
+.contact-form {
+  position: fixed;
+  right: 24px;
+  bottom: 112px;
+  z-index: 1001;
+  display: none;
+  width: min(320px, calc(100vw - 32px));
+}
+
+.contact-form.is-open {
+  display: block;
+  animation: artemis-fade-up 220ms ease-out;
+}
+
+.contact-form__card {
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid var(--artemis-border);
+  border-radius: 18px;
+  box-shadow: 0 18px 52px rgba(15, 23, 42, 0.18);
+  padding: 18px;
+  backdrop-filter: blur(10px);
+}
+
+.contact-form__title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.contact-form__subtitle {
+  margin: 6px 0 14px;
+  color: var(--artemis-text-soft);
+  font-size: 0.92rem;
+}
+
+.contact-form__fields {
+  display: grid;
+  gap: 10px;
+}
+
+.contact-form__label {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.contact-form__fields input,
+.contact-form__fields textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--artemis-border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font: inherit;
+  color: var(--artemis-text);
+  background: #fbfdff;
+}
+
+.contact-form__fields textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+.contact-form__fields input:focus,
+.contact-form__fields textarea:focus {
+  outline: 2px solid rgba(20, 184, 166, 0.18);
+  border-color: var(--artemis-brand-500);
+}
+
+.contact-form__button {
+  border: 0;
+  border-radius: 12px;
+  padding: 11px 14px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  color: #f8fffe;
+  background: linear-gradient(135deg, #0f766e, #0d9488);
+}
+
+.contact-form__button--secondary {
+  background: #dc2626;
+}
+
+@media (max-width: 768px) {
+  .contact-form {
+    right: 10px;
+    left: 10px;
+    bottom: 92px;
+    width: auto;
+  }
+}
