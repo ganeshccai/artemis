@@ -5,6 +5,7 @@ let contactFormOpenTimer = null;
 let contactFormOpenPending = false;
 let activeDfMessenger = null;
 let hasAutoStartedConversation = false;
+let isChatWindowOpen = false;
 const PERSONA_TEXT_COLOR = "#8f1d56";
 const PERSONA_FONT_FAMILY = "Arial, sans-serif";
 const PERSONA_FONT_SIZE = "9px";
@@ -123,36 +124,39 @@ function ensureCircularBubbleIcon(dfMessenger) {
 function autoOpenChatWindow(dfMessenger, bubbleNode, delayMs) {
     window.setTimeout(() => {
         ensureChatOpened(dfMessenger, bubbleNode);
-        scheduleAutoStartConversation(dfMessenger);
     }, delayMs);
 }
 
 function ensureChatOpened(dfMessenger, bubbleNode) {
-    if (openChatWindow(dfMessenger, bubbleNode)) {
+    if (isChatWindowOpen) {
         return;
     }
 
-    const retryOpen = () => {
+    let attempts = 0;
+    const maxAttempts = 8;
+    const retryDelayMs = 350;
+
+    const attemptOpen = () => {
+        if (isChatWindowOpen || attempts >= maxAttempts) {
+            return;
+        }
+
+        attempts += 1;
         openChatWindow(dfMessenger, bubbleNode);
+
+        if (!isChatWindowOpen) {
+            window.setTimeout(attemptOpen, retryDelayMs);
+        }
     };
 
-    window.addEventListener("df-messenger-loaded", retryOpen, { once: true });
-    window.setTimeout(retryOpen, 250);
-    window.setTimeout(retryOpen, 800);
+    window.addEventListener("df-messenger-loaded", attemptOpen, { once: true });
+    attemptOpen();
 }
 
 function openChatWindow(dfMessenger, bubbleNode) {
-    let opened = false;
-
     if (bubbleNode) {
-        bubbleNode.setAttribute("expand", "true");
-        if ("expand" in bubbleNode) {
-            bubbleNode.expand = true;
-        }
-
         if (typeof bubbleNode.openChat === "function") {
             bubbleNode.openChat();
-            opened = true;
         }
     }
 
@@ -160,11 +164,10 @@ function openChatWindow(dfMessenger, bubbleNode) {
         dfMessenger.setAttribute("expand", "true");
         if ("expand" in dfMessenger) {
             dfMessenger.expand = true;
-            opened = true;
         }
     }
 
-    return tryOpenChatByClick(dfMessenger) || opened;
+    return tryOpenChatByClick(dfMessenger);
 }
 
 function scheduleAutoStartConversation(dfMessenger) {
@@ -286,6 +289,17 @@ function initializeChatStateSync(dfMessenger) {
     if (!dfMessenger) {
         return;
     }
+
+    window.addEventListener("df-chat-open-changed", (event) => {
+        isChatWindowOpen = !!(event && event.detail && event.detail.isOpen);
+
+        if (isChatWindowOpen) {
+            scheduleAutoStartConversation(dfMessenger);
+            return;
+        }
+
+        closeContactForm();
+    });
 
     document.addEventListener("click", (event) => {
         if (didUserCloseChat(event)) {
