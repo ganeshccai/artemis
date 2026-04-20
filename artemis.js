@@ -4,6 +4,7 @@ let lastUserPersonaRenderAt = 0;
 let contactFormOpenTimer = null;
 let contactFormOpenPending = false;
 let activeDfMessenger = null;
+let hasAutoStartedConversation = false;
 const PERSONA_TEXT_COLOR = "#8f1d56";
 const PERSONA_FONT_FAMILY = "Arial, sans-serif";
 const PERSONA_FONT_SIZE = "9px";
@@ -21,6 +22,8 @@ const CONTACT_FORM_OPEN_ACTION = "open_form";
 const CONTACT_FORM_ENDPOINT = "/contact-form-submissions";
 const API_BASE_URL_META_NAME = "artemis-api-base-url";
 const MOBILE_CHAT_BREAKPOINT_PX = 768;
+const AUTO_START_CHAT_EVENT_NAME = "WELCOME";
+const AUTO_START_CHAT_DELAY_MS = 600;
 
 window.addEventListener("DOMContentLoaded", () => {
     initializeContactForm();
@@ -124,6 +127,10 @@ function autoOpenChatWindow(dfMessenger, bubbleNode, delayMs) {
             if ("expand" in bubbleNode) {
                 bubbleNode.expand = true;
             }
+
+            if (typeof bubbleNode.openChat === "function") {
+                bubbleNode.openChat();
+            }
         }
 
         if (dfMessenger) {
@@ -134,7 +141,44 @@ function autoOpenChatWindow(dfMessenger, bubbleNode, delayMs) {
         }
 
         tryOpenChatByClick(dfMessenger);
+        scheduleAutoStartConversation(dfMessenger);
     }, delayMs);
+}
+
+function scheduleAutoStartConversation(dfMessenger) {
+    if (!dfMessenger || hasAutoStartedConversation) {
+        return;
+    }
+
+    const triggerConversationStart = () => {
+        window.setTimeout(() => {
+            startConversationWithWelcomeEvent(dfMessenger);
+        }, AUTO_START_CHAT_DELAY_MS);
+    };
+
+    if (typeof dfMessenger.sendRequest === "function") {
+        triggerConversationStart();
+        return;
+    }
+
+    const onMessengerLoaded = () => {
+        window.removeEventListener("df-messenger-loaded", onMessengerLoaded);
+        triggerConversationStart();
+    };
+
+    window.addEventListener("df-messenger-loaded", onMessengerLoaded);
+}
+
+function startConversationWithWelcomeEvent(dfMessenger) {
+    if (!dfMessenger || hasAutoStartedConversation || typeof dfMessenger.sendRequest !== "function") {
+        return;
+    }
+
+    hasAutoStartedConversation = true;
+
+    dfMessenger.sendRequest("event", AUTO_START_CHAT_EVENT_NAME).catch(() => {
+        hasAutoStartedConversation = false;
+    });
 }
 
 function tryOpenChatByClick(dfMessenger) {
