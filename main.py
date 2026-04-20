@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 import firebase_admin
 from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
@@ -10,6 +10,27 @@ app = Flask(__name__)
 firebase_admin.initialize_app()
 db = firestore.client()
 LEAD_DETAILS_COLLECTION = "leaddetails"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+@app.route("/")
+def index():
+    return send_from_directory(BASE_DIR, "Artemis_Hospital.html")
+
+
+@app.route("/Artemis_Hospital.html")
+def hospital_page():
+    return send_from_directory(BASE_DIR, "Artemis_Hospital.html")
+
+
+@app.route("/artemis.css")
+def artemis_css():
+    return send_from_directory(BASE_DIR, "artemis.css")
+
+
+@app.route("/artemis.js")
+def artemis_js():
+    return send_from_directory(BASE_DIR, "artemis.js")
 
 
 def sanitize_contact_submission(payload):

@@ -319,6 +319,16 @@ function submitContactForm(event) {
         email: emailInput ? emailInput.value.trim() : "",
         message: messageInput ? messageInput.value.trim() : ""
     };
+    const endpoint = getContactFormEndpoint();
+
+    if (!endpoint) {
+        if (status) {
+            status.textContent = "Open this page through the Flask app URL to submit the form.";
+            status.classList.add("is-error");
+            status.classList.remove("is-success");
+        }
+        return;
+    }
 
     if (status) {
         status.textContent = "Submitting...";
@@ -329,7 +339,7 @@ function submitContactForm(event) {
         submitButton.disabled = true;
     }
 
-    fetch(CONTACT_FORM_ENDPOINT, {
+    fetch(endpoint, {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
@@ -377,6 +387,14 @@ function submitContactForm(event) {
                 submitButton.disabled = false;
             }
         });
+}
+
+function getContactFormEndpoint() {
+    if (window.location.protocol === "file:") {
+        return null;
+    }
+
+    return new URL(CONTACT_FORM_ENDPOINT, window.location.href).toString();
 }
 
 function renderUserPersona(dfMessenger) {
