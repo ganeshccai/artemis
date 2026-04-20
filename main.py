@@ -39,6 +39,15 @@ def validate_contact_submission(data):
     return None
 
 
+def extract_session_text(params, key):
+    value = params.get(key, "")
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
 @app.route("/contact-form-submissions", methods=["POST"])
 def create_contact_form_submission():
     payload = request.get_json(silent=True) or {}
@@ -142,6 +151,73 @@ def webhook():
                             "text": {
                                 "text": [
                                     f"✅ Your {diagnostic_name} appointment has been booked for {formatted_date}. We will contact you soon."
+                                ]
+                            }
+                        }
+                    ]
+                }
+            }
+        )
+
+    elif tag == "save_contact_form":
+        submission = {
+            "name": extract_session_text(params, "contact_name"),
+            "email": extract_session_text(params, "contact_email"),
+            "mobile": extract_session_text(params, "contact_mobile"),
+            "message": extract_session_text(params, "contact_message"),
+        }
+        validation_error = validate_contact_submission(submission)
+
+        if validation_error:
+            return jsonify(
+                {
+                    "fulfillment_response": {
+                        "messages": [
+                            {
+                                "text": {
+                                    "text": [validation_error]
+                                }
+                            }
+                        ]
+                    }
+                }
+            )
+
+        firestore_payload = {
+            **submission,
+            "created_at": firestore.SERVER_TIMESTAMP,
+            "source": "dialogflow_cx_chatflow",
+            "session": session,
+        }
+
+        try:
+            db.collection("contact_form_submissions").document(session).set(firestore_payload)
+        except Exception as exc:
+            print("Contact form Firestore write error:", exc)
+            return jsonify(
+                {
+                    "fulfillment_response": {
+                        "messages": [
+                            {
+                                "text": {
+                                    "text": [
+                                        "We could not save your contact details right now. Please try again."
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                }
+            )
+
+        return jsonify(
+            {
+                "fulfillment_response": {
+                    "messages": [
+                        {
+                            "text": {
+                                "text": [
+                                    "Thank you. We have received your details and our team will contact you soon."
                                 ]
                             }
                         }
