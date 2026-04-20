@@ -9,6 +9,7 @@ from datetime import datetime
 app = Flask(__name__)
 firebase_admin.initialize_app()
 db = firestore.client()
+LEAD_DETAILS_COLLECTION = "leaddetails"
 
 
 def sanitize_contact_submission(payload):
@@ -48,6 +49,14 @@ def extract_session_text(params, key):
     return str(value).strip()
 
 
+def extract_first_session_text(params, keys):
+    for key in keys:
+        value = extract_session_text(params, key)
+        if value:
+            return value
+    return ""
+
+
 @app.route("/contact-form-submissions", methods=["POST"])
 def create_contact_form_submission():
     payload = request.get_json(silent=True) or {}
@@ -61,7 +70,7 @@ def create_contact_form_submission():
     submission["source"] = "website_contact_form"
 
     try:
-        document = db.collection("contact_form_submissions").document()
+        document = db.collection(LEAD_DETAILS_COLLECTION).document()
         document.set(submission)
     except Exception as exc:
         print("Contact form Firestore write error:", exc)
@@ -161,10 +170,10 @@ def webhook():
 
     elif tag == "save_contact_form":
         submission = {
-            "name": extract_session_text(params, "contact_name"),
-            "email": extract_session_text(params, "contact_email"),
-            "mobile": extract_session_text(params, "contact_mobile"),
-            "message": extract_session_text(params, "contact_message"),
+            "name": extract_first_session_text(params, ["patientname", "contact_name", "name"]),
+            "email": extract_first_session_text(params, ["patientemail", "contact_email", "email"]),
+            "mobile": extract_first_session_text(params, ["patientmobile", "contact_mobile", "mobile", "phone"]),
+            "message": extract_first_session_text(params, ["patientmessage", "contact_message", "message"]),
         }
         validation_error = validate_contact_submission(submission)
 
@@ -191,7 +200,7 @@ def webhook():
         }
 
         try:
-            db.collection("contact_form_submissions").document(session).set(firestore_payload)
+            db.collection(LEAD_DETAILS_COLLECTION).document(session).set(firestore_payload)
         except Exception as exc:
             print("Contact form Firestore write error:", exc)
             return jsonify(
