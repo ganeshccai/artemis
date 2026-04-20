@@ -20,7 +20,6 @@ def add_cors_headers(response):
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return response
 
-
 @app.route("/")
 def index():
     return send_from_directory(BASE_DIR, "Artemis_Hospital.html")
