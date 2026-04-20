@@ -47,6 +47,7 @@ window.addEventListener("DOMContentLoaded", () => {
         ensureCircularBubbleIcon(df);
         autoOpenChatWindow(df, bubble, CHAT_AUTO_OPEN_DELAY_MS);
         initializeMobileChatLayout(df);
+        initializeChatStateSync(df);
         attachPersonaHandlers(df);
         startPersonaDecorator(df);
     }, 1000);
@@ -211,6 +212,60 @@ function initializeMobileChatLayout(dfMessenger) {
 
 function isMobileViewport() {
     return window.innerWidth <= MOBILE_CHAT_BREAKPOINT_PX;
+}
+
+function initializeChatStateSync(dfMessenger) {
+    if (!dfMessenger) {
+        return;
+    }
+
+    document.addEventListener("click", (event) => {
+        if (didUserCloseChat(event)) {
+            closeContactForm();
+        }
+    }, true);
+
+    const observer = new MutationObserver(() => {
+        if (!isChatExpanded(dfMessenger)) {
+            closeContactForm();
+        }
+    });
+
+    observer.observe(dfMessenger, {
+        attributes: true,
+        attributeFilter: ["expand"]
+    });
+}
+
+function didUserCloseChat(event) {
+    const eventPath = typeof event.composedPath === "function" ? event.composedPath() : [];
+
+    return eventPath.some((node) => {
+        if (!node || typeof node.getAttribute !== "function") {
+            return false;
+        }
+
+        const ariaLabel = (node.getAttribute("aria-label") || "").toLowerCase();
+        const dataTestId = (node.getAttribute("data-testid") || "").toLowerCase();
+        const textContent = typeof node.textContent === "string" ? node.textContent.toLowerCase() : "";
+
+        return /close|collapse|minimize/.test(ariaLabel)
+            || /close|collapse|minimize/.test(dataTestId)
+            || /close|collapse|minimize/.test(textContent);
+    });
+}
+
+function isChatExpanded(dfMessenger) {
+    if (!dfMessenger) {
+        return false;
+    }
+
+    if (typeof dfMessenger.expand === "boolean") {
+        return dfMessenger.expand;
+    }
+
+    const expandAttribute = (dfMessenger.getAttribute("expand") || "").toLowerCase();
+    return expandAttribute === "true";
 }
 
 function attachPersonaHandlers(dfMessenger) {
@@ -378,6 +433,13 @@ function openContactForm() {
 function closeContactForm() {
     const form = document.getElementById("contact-form");
 
+    contactFormOpenPending = false;
+
+    if (contactFormOpenTimer) {
+        window.clearTimeout(contactFormOpenTimer);
+        contactFormOpenTimer = null;
+    }
+
     if (!form) {
         return;
     }
@@ -484,6 +546,8 @@ function submitContactForm(event) {
             if (messageInput) {
                 messageInput.value = "";
             }
+
+            closeContactForm();
         })
         .catch((error) => {
             if (status) {
