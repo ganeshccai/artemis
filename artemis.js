@@ -11,8 +11,12 @@ const PERSONA_OPACITY = "0.84";
 const USER_PERSONA_TOKEN = encodeURIComponent("🙂User");
 const BOT_PERSONA_TOKEN = encodeURIComponent("Bot 🤖");
 const CHAT_AUTO_OPEN_DELAY_MS = 5000;
+const CONTACT_FORM_OPEN_ACTION = "open_form";
+const CONTACT_FORM_ENDPOINT = "/contact-form-submissions";
 
 window.addEventListener("DOMContentLoaded", () => {
+    initializeContactForm();
+
     setTimeout(() => {
         const df = document.createElement("df-messenger");
         df.setAttribute("project-id", "project001-474715");
@@ -172,10 +176,207 @@ function attachPersonaHandlers(dfMessenger) {
             ? event.detail.data.messages
             : [];
 
+        if (shouldOpenContactForm(event)) {
+            openContactForm();
+        }
+
         if (messages.length > 0) {
             renderPersona(dfMessenger, "bot", "Bot 🤖");
         }
     });
+}
+
+function initializeContactForm() {
+    const form = document.getElementById("contact-form-fields");
+    const closeButton = document.getElementById("contact-form-close");
+
+    if (form) {
+        form.addEventListener("submit", submitContactForm);
+    }
+
+    if (closeButton) {
+        closeButton.addEventListener("click", closeContactForm);
+    }
+}
+
+function shouldOpenContactForm(event) {
+    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
+        && Array.isArray(event.detail.raw.queryResult.responseMessages)
+        ? event.detail.raw.queryResult.responseMessages
+        : [];
+
+    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
+        ? event.detail.data.messages
+        : [];
+
+    return [...responseMessages, ...messengerMessages].some(messageContainsOpenFormAction);
+}
+
+function messageContainsOpenFormAction(message) {
+    if (!message || typeof message !== "object") {
+        return false;
+    }
+
+    const payload = extractPayload(message);
+    return payload && payload.action === CONTACT_FORM_OPEN_ACTION;
+}
+
+function extractPayload(message) {
+    if (!message || !message.payload) {
+        return null;
+    }
+
+    if (typeof message.payload.action === "string") {
+        return message.payload;
+    }
+
+    if (message.payload.fields) {
+        return convertStructFieldsToObject(message.payload.fields);
+    }
+
+    return null;
+}
+
+function convertStructFieldsToObject(fields) {
+    const result = {};
+
+    for (const [key, value] of Object.entries(fields)) {
+        result[key] = convertDialogflowValue(value);
+    }
+
+    return result;
+}
+
+function convertDialogflowValue(value) {
+    if (!value || typeof value !== "object") {
+        return value;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(value, "stringValue")) {
+        return value.stringValue;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(value, "numberValue")) {
+        return value.numberValue;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(value, "boolValue")) {
+        return value.boolValue;
+    }
+
+    if (value.structValue && value.structValue.fields) {
+        return convertStructFieldsToObject(value.structValue.fields);
+    }
+
+    if (value.listValue && Array.isArray(value.listValue.values)) {
+        return value.listValue.values.map(convertDialogflowValue);
+    }
+
+    return null;
+}
+
+function openContactForm() {
+    const form = document.getElementById("contact-form");
+    const status = document.getElementById("contact-form-status");
+
+    if (!form) {
+        return;
+    }
+
+    if (status) {
+        status.textContent = "";
+        status.classList.remove("is-success", "is-error");
+    }
+
+    form.classList.add("is-open");
+    form.setAttribute("aria-hidden", "false");
+}
+
+function closeContactForm() {
+    const form = document.getElementById("contact-form");
+
+    if (!form) {
+        return;
+    }
+
+    form.classList.remove("is-open");
+    form.setAttribute("aria-hidden", "true");
+}
+
+function submitContactForm(event) {
+    event.preventDefault();
+
+    const nameInput = document.getElementById("contact-name");
+    const mobileInput = document.getElementById("contact-mobile");
+    const emailInput = document.getElementById("contact-email");
+    const messageInput = document.getElementById("contact-message");
+    const submitButton = document.getElementById("contact-form-submit");
+    const status = document.getElementById("contact-form-status");
+
+    const payload = {
+        name: nameInput ? nameInput.value.trim() : "",
+        mobile: mobileInput ? mobileInput.value.trim() : "",
+        email: emailInput ? emailInput.value.trim() : "",
+        message: messageInput ? messageInput.value.trim() : ""
+    };
+
+    if (status) {
+        status.textContent = "Submitting...";
+        status.classList.remove("is-success", "is-error");
+    }
+
+    if (submitButton) {
+        submitButton.disabled = true;
+    }
+
+    fetch(CONTACT_FORM_ENDPOINT, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+    })
+        .then(async (response) => {
+            const responsePayload = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                throw new Error(responsePayload.error || "Unable to submit the form.");
+            }
+
+            if (status) {
+                status.textContent = responsePayload.message || "Submitted successfully.";
+                status.classList.add("is-success");
+                status.classList.remove("is-error");
+            }
+
+            if (nameInput) {
+                nameInput.value = "";
+            }
+
+            if (mobileInput) {
+                mobileInput.value = "";
+            }
+
+            if (emailInput) {
+                emailInput.value = "";
+            }
+
+            if (messageInput) {
+                messageInput.value = "";
+            }
+        })
+        .catch((error) => {
+            if (status) {
+                status.textContent = error.message || "Submission failed. Please try again.";
+                status.classList.add("is-error");
+                status.classList.remove("is-success");
+            }
+        })
+        .finally(() => {
+            if (submitButton) {
+                submitButton.disabled = false;
+            }
+        });
 }
 
 function renderUserPersona(dfMessenger) {
