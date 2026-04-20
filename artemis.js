@@ -6,6 +6,8 @@ let contactFormOpenPending = false;
 let activeDfMessenger = null;
 let hasAutoStartedConversation = false;
 let isChatWindowOpen = false;
+let isMessengerLoaded = false;
+let shouldAutoOpenChat = false;
 const PERSONA_TEXT_COLOR = "#8f1d56";
 const PERSONA_FONT_FAMILY = "Arial, sans-serif";
 const PERSONA_FONT_SIZE = "9px";
@@ -47,6 +49,7 @@ window.addEventListener("DOMContentLoaded", () => {
         bubble.setAttribute("chat-title", "Artemis_Hospital");
         bubble.setAttribute("chat-subtitle", "🟢 Online");
 
+        initializeMessengerReadyState(df, bubble);
         df.appendChild(bubble);
         document.body.appendChild(df);
 
@@ -123,40 +126,42 @@ function ensureCircularBubbleIcon(dfMessenger) {
 
 function autoOpenChatWindow(dfMessenger, bubbleNode, delayMs) {
     window.setTimeout(() => {
-        const attemptOpen = () => {
-            if (bubbleNode) {
-                bubbleNode.setAttribute("expand", "true");
-                if ("expand" in bubbleNode) {
-                    bubbleNode.expand = true;
-                }
+        shouldAutoOpenChat = true;
 
-                if (typeof bubbleNode.openChat === "function") {
-                    bubbleNode.openChat();
-                }
-            }
-
-            if (dfMessenger) {
-                dfMessenger.setAttribute("expand", "true");
-                if ("expand" in dfMessenger) {
-                    dfMessenger.expand = true;
-                }
-            }
-
-            tryOpenChatByClick(dfMessenger);
-        };
-
-        attemptOpen();
-        window.setTimeout(() => {
-            if (!isChatWindowOpen) {
-                attemptOpen();
-            }
-        }, 300);
-        window.setTimeout(() => {
-            if (!isChatWindowOpen) {
-                attemptOpen();
-            }
-        }, 900);
+        if (isMessengerLoaded) {
+            openChatWindow(dfMessenger, bubbleNode);
+        }
     }, delayMs);
+}
+
+function initializeMessengerReadyState(dfMessenger, bubbleNode) {
+    window.addEventListener("df-messenger-loaded", () => {
+        if (activeDfMessenger !== dfMessenger) {
+            return;
+        }
+
+        isMessengerLoaded = true;
+
+        if (shouldAutoOpenChat) {
+            openChatWindow(dfMessenger, bubbleNode);
+        }
+    });
+}
+
+function openChatWindow(dfMessenger, bubbleNode) {
+    if (bubbleNode && typeof bubbleNode.openChat === "function") {
+        bubbleNode.openChat();
+    }
+
+    if (!isChatWindowOpen) {
+        tryOpenChatByClick(dfMessenger);
+    }
+
+    window.setTimeout(() => {
+        if (!isChatWindowOpen) {
+            tryOpenChatByClick(dfMessenger);
+        }
+    }, 250);
 }
 
 function scheduleAutoStartConversation(dfMessenger) {
