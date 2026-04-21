@@ -38,11 +38,9 @@ const SUPPORTED_LANGUAGES = CHAT_LANGUAGE_OPTIONS.map((option) => option.code);
 const CHAT_LANGUAGE_DROPDOWN_ID = "artemis-chat-language-dropdown";
 const GOOGLE_TRANSLATE_ENDPOINT = "https://translate.googleapis.com/translate_a/single";
 const DOM_TRANSLATION_DEBOUNCE_MS = 180;
-const DF_RESPONSE_TIMEOUT_MS = 9000;
 let activeLanguage = getInitialLanguage();
 let latestTranslationRunId = 0;
 let translationRefreshTimer = null;
-let dfResponseTimeoutTimer = null;
 const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
@@ -401,8 +399,6 @@ function attachPersonaHandlers(dfMessenger) {
         if (typeof queryText === "string" && queryText.trim()) {
             renderUserPersona(dfMessenger);
         }
-
-        scheduleDfResponseTimeoutGuard();
     });
 
     window.addEventListener("df-response-received", (event) => {
@@ -417,8 +413,6 @@ function attachPersonaHandlers(dfMessenger) {
         if (messages.length > 0) {
             renderPersona(dfMessenger, "bot", "Bot 🤖");
         }
-
-        clearDfResponseTimeoutGuard();
 
         if (contactFormOpenPending) {
             scheduleContactFormOpen();
@@ -711,16 +705,8 @@ function applyLanguage(languageCode) {
 
 async function applyLanguageInternal(languageCode) {
     const nextLanguage = normalizeLanguage(languageCode);
-    const previousLanguage = activeLanguage;
     activeLanguage = nextLanguage;
     persistLanguage(nextLanguage);
-
-    // Recreate chat session with the new language code by reloading once.
-    // This avoids stale English session state when switching languages.
-    if (activeDfMessenger && previousLanguage !== nextLanguage) {
-        window.location.reload();
-        return;
-    }
 
     await ensureUiTranslationsForLanguage(nextLanguage);
 
@@ -1178,34 +1164,6 @@ function getInitialLanguage() {
     }
 
     return DEFAULT_LANGUAGE;
-}
-
-function scheduleDfResponseTimeoutGuard() {
-    clearDfResponseTimeoutGuard();
-
-    if (activeLanguage === DEFAULT_LANGUAGE) {
-        return;
-    }
-
-    dfResponseTimeoutTimer = window.setTimeout(() => {
-        activeLanguage = DEFAULT_LANGUAGE;
-        persistLanguage(DEFAULT_LANGUAGE);
-
-        if (activeDfMessenger) {
-            activeDfMessenger.setAttribute("language-code", DEFAULT_LANGUAGE);
-        }
-
-        syncChatLanguageDropdownValue(DEFAULT_LANGUAGE);
-    }, DF_RESPONSE_TIMEOUT_MS);
-}
-
-function clearDfResponseTimeoutGuard() {
-    if (!dfResponseTimeoutTimer) {
-        return;
-    }
-
-    window.clearTimeout(dfResponseTimeoutTimer);
-    dfResponseTimeoutTimer = null;
 }
 
 function persistLanguage(languageCode) {
