@@ -31,14 +31,13 @@ const LANGUAGE_STORAGE_KEY = "artemis_ui_language";
 const DEFAULT_LANGUAGE = "en";
 const CHAT_LANGUAGE_OPTIONS = [
     { code: "en", label: "English" },
-     { code: "te", label: "Telugu" },
+    { code: "te", label: "Telugu" },
     { code: "hi", label: "Hindi" }
 ];
 const SUPPORTED_LANGUAGES = CHAT_LANGUAGE_OPTIONS.map((option) => option.code);
 const CHAT_LANGUAGE_DROPDOWN_ID = "artemis-chat-language-dropdown";
 const GOOGLE_TRANSLATE_ENDPOINT = "https://translate.googleapis.com/translate_a/single";
 const DOM_TRANSLATION_DEBOUNCE_MS = 180;
-const ENABLE_GOOGLE_DOM_TRANSLATION = false;
 let activeLanguage = getInitialLanguage();
 let latestTranslationRunId = 0;
 let translationRefreshTimer = null;
@@ -46,43 +45,30 @@ const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
 
+const BASE_UI_TRANSLATIONS = {
+    contactFormTitle: "Contact Us",
+    contactFormSubtitle: "Share your details and we will contact you.",
+    closeContactFormAria: "Close contact form",
+    namePlaceholder: "Name",
+    mobilePlaceholder: "Mobile number",
+    emailPlaceholder: "Email",
+    messagePlaceholder: "How can we help?",
+    submitButton: "Submit",
+    languageLabel: "Language",
+    statusOpenViaFlask: "Open this page through the Flask app URL to submit the form.",
+    statusSubmitting: "Submitting...",
+    statusSubmitted: "Submitted successfully.",
+    statusSubmissionFailed: "Submission failed. Please try again.",
+    contactResponseThanks: "Thank You for sharing the details"
+};
 const UI_TRANSLATIONS = {
-    en: {
-        contactFormTitle: "Contact Us",
-        contactFormSubtitle: "Share your details and we will contact you.",
-        closeContactFormAria: "Close contact form",
-        namePlaceholder: "Name",
-        mobilePlaceholder: "Mobile number",
-        emailPlaceholder: "Email",
-        messagePlaceholder: "How can we help?",
-        submitButton: "Submit",
-        languageLabel: "Language",
-        statusOpenViaFlask: "Open this page through the Flask app URL to submit the form.",
-        statusSubmitting: "Submitting...",
-        statusSubmitted: "Submitted successfully.",
-        statusSubmissionFailed: "Submission failed. Please try again.",
-        contactResponseThanks: "Thank You for sharing the details"
-    },
-    hi: {
-        contactFormTitle: "संपर्क करें",
-        contactFormSubtitle: "अपनी जानकारी साझा करें, हम आपसे संपर्क करेंगे।",
-        closeContactFormAria: "संपर्क फॉर्म बंद करें",
-        namePlaceholder: "नाम",
-        mobilePlaceholder: "मोबाइल नंबर",
-        emailPlaceholder: "ईमेल",
-        messagePlaceholder: "हम आपकी कैसे मदद कर सकते हैं?",
-        submitButton: "जमा करें",
-        languageLabel: "भाषा",
-        statusOpenViaFlask: "फॉर्म जमा करने के लिए इस पेज को Flask ऐप URL से खोलें।",
-        statusSubmitting: "जमा किया जा रहा है...",
-        statusSubmitted: "सफलतापूर्वक जमा किया गया।",
-        statusSubmissionFailed: "जमा नहीं हो सका। कृपया फिर से प्रयास करें।",
-        contactResponseThanks: "जानकारी साझा करने के लिए धन्यवाद"
-    }
+    [DEFAULT_LANGUAGE]: BASE_UI_TRANSLATIONS
 };
 
 window.addEventListener("DOMContentLoaded", () => {
-    applyLanguage(activeLanguage);
+    applyLanguage(activeLanguage).catch(() => {
+        // Keep UI responsive even if translation requests fail.
+    });
     initializeContactForm();
     initializeClientContextCapture();
 
@@ -431,8 +417,6 @@ function attachPersonaHandlers(dfMessenger) {
         if (contactFormOpenPending) {
             scheduleContactFormOpen();
         }
-
-        scheduleDomTranslationRefresh();
     });
 }
 
@@ -716,9 +700,15 @@ function renderContactFormSubmissionResponse(name, mobile) {
 }
 
 function applyLanguage(languageCode) {
+    return applyLanguageInternal(languageCode);
+}
+
+async function applyLanguageInternal(languageCode) {
     const nextLanguage = normalizeLanguage(languageCode);
     activeLanguage = nextLanguage;
     persistLanguage(nextLanguage);
+
+    await ensureUiTranslationsForLanguage(nextLanguage);
 
     const textNodes = document.querySelectorAll("[data-i18n]");
     for (const node of textNodes) {
@@ -743,8 +733,6 @@ function applyLanguage(languageCode) {
     if (activeDfMessenger) {
         activeDfMessenger.setAttribute("language-code", nextLanguage);
     }
-
-    scheduleDomTranslationRefresh();
 }
 
 function initializeChatLanguageDropdown(dfMessenger) {
@@ -815,7 +803,9 @@ function mountChatLanguageDropdown(dfMessenger) {
     select.value = activeLanguage;
     select.addEventListener("change", (event) => {
         const selectedValue = event.target && event.target.value ? event.target.value : DEFAULT_LANGUAGE;
-        applyLanguage(selectedValue);
+        applyLanguage(selectedValue).catch(() => {
+            // Keep language switching non-blocking on network failures.
+        });
     });
 
     wrapper.appendChild(label);
@@ -892,22 +882,27 @@ function syncChatLanguageDropdownValue(languageCode) {
 
 function getTranslation(key) {
     const translationTable = UI_TRANSLATIONS[activeLanguage] || UI_TRANSLATIONS[DEFAULT_LANGUAGE];
-    return translationTable[key] || UI_TRANSLATIONS[DEFAULT_LANGUAGE][key] || key;
+    return translationTable[key] || BASE_UI_TRANSLATIONS[key] || key;
 }
 
-function scheduleDomTranslationRefresh() {
-    if (!ENABLE_GOOGLE_DOM_TRANSLATION) {
+async function ensureUiTranslationsForLanguage(languageCode) {
+    const normalizedLanguage = normalizeLanguage(languageCode);
+
+    if (normalizedLanguage === DEFAULT_LANGUAGE || UI_TRANSLATIONS[normalizedLanguage]) {
         return;
     }
 
-    if (translationRefreshTimer) {
-        window.clearTimeout(translationRefreshTimer);
-    }
+    const entries = Object.entries(BASE_UI_TRANSLATIONS);
+    const translatedEntries = await Promise.all(entries.map(async ([key, value]) => {
+        const translatedValue = await translateTextUsingGoogle(value, normalizedLanguage);
+        return [key, translatedValue || value];
+    }));
 
-    translationRefreshTimer = window.setTimeout(() => {
-        translationRefreshTimer = null;
-        applyDomTranslation(activeLanguage);
-    }, DOM_TRANSLATION_DEBOUNCE_MS);
+    UI_TRANSLATIONS[normalizedLanguage] = Object.fromEntries(translatedEntries);
+}
+
+function scheduleDomTranslationRefresh() {
+    // DOM-level screen translation is intentionally disabled.
 }
 
 async function applyDomTranslation(languageCode) {
@@ -1171,6 +1166,10 @@ function getInitialLanguage() {
     const browserLanguage = (navigator.language || "").toLowerCase();
     if (browserLanguage.startsWith("hi")) {
         return "hi";
+    }
+
+    if (browserLanguage.startsWith("te")) {
+        return "te";
     }
 
     return DEFAULT_LANGUAGE;
