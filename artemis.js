@@ -41,6 +41,7 @@ const DOM_TRANSLATION_DEBOUNCE_MS = 180;
 let activeLanguage = getInitialLanguage();
 let latestTranslationRunId = 0;
 let translationRefreshTimer = null;
+let pendingVisibleTranslationRunId = 0;
 const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
@@ -91,7 +92,7 @@ window.addEventListener("DOMContentLoaded", () => {
         df.setAttribute("project-id", "project001-474715");
         df.setAttribute("location", "us-central1");
         df.setAttribute("agent-id", "57dcbcf5-05fd-4556-90d4-3438bc6c28d9");
-        df.setAttribute("language-code", activeLanguage === "hi" ? "hi" : "en");
+        df.setAttribute("language-code", activeLanguage);
         df.setAttribute("max-query-length", "-1");
         df.setAttribute("url-allowlist", "*");
         df.setAttribute("storage-option", "none");
@@ -431,7 +432,7 @@ function attachPersonaHandlers(dfMessenger) {
             scheduleContactFormOpen();
         }
 
-        scheduleDomTranslationRefresh();
+        applyDomTranslation(activeLanguage);
     });
 }
 
@@ -740,10 +741,10 @@ function applyLanguage(languageCode) {
     syncChatLanguageDropdownValue(nextLanguage);
 
     if (activeDfMessenger) {
-        activeDfMessenger.setAttribute("language-code", nextLanguage === "hi" ? "hi" : "en");
+        activeDfMessenger.setAttribute("language-code", nextLanguage);
     }
 
-    scheduleDomTranslationRefresh();
+    applyDomTranslation(nextLanguage);
 }
 
 function initializeChatLanguageDropdown(dfMessenger) {
@@ -909,14 +910,23 @@ async function applyDomTranslation(languageCode) {
     const normalizedLanguage = normalizeLanguage(languageCode);
     const runId = latestTranslationRunId + 1;
     latestTranslationRunId = runId;
+    pendingVisibleTranslationRunId = runId;
+
+    if (normalizedLanguage !== DEFAULT_LANGUAGE) {
+        setChatTranslationPending(true);
+    }
 
     if (normalizedLanguage === DEFAULT_LANGUAGE) {
         restoreOriginalDomContent();
+        setChatTranslationPending(false);
         return;
     }
 
     const targets = collectTranslationTargets();
     if (!targets.length) {
+        if (runId === pendingVisibleTranslationRunId) {
+            setChatTranslationPending(false);
+        }
         return;
     }
 
@@ -943,6 +953,10 @@ async function applyDomTranslation(languageCode) {
         if (target.type === "attr") {
             target.element.setAttribute(target.attribute, translatedText);
         }
+    }
+
+    if (runId === pendingVisibleTranslationRunId) {
+        setChatTranslationPending(false);
     }
 }
 
@@ -1061,11 +1075,24 @@ function shouldSkipTranslationElement(element) {
         return true;
     }
 
+    if (element.closest("[data-artemis-chat-language='true']") || element.closest(`#${CHAT_LANGUAGE_DROPDOWN_ID}`)) {
+        return true;
+    }
+
     if (element.closest("#contact-form-fields") && element.matches("input, textarea")) {
         return true;
     }
 
     return false;
+}
+
+function setChatTranslationPending(isPending) {
+    if (!activeDfMessenger) {
+        return;
+    }
+
+    activeDfMessenger.style.transition = "opacity 120ms ease";
+    activeDfMessenger.style.opacity = isPending ? "0" : "1";
 }
 
 function isLikelyNaturalLanguage(value) {
