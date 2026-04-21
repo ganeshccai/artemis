@@ -435,6 +435,11 @@ function attachPersonaHandlers(dfMessenger) {
             ? event.detail.data.messages
             : [];
 
+        const requestedLanguage = extractLanguageFromResponse(event);
+        if (requestedLanguage) {
+            applyLanguage(requestedLanguage);
+        }
+
         if (shouldOpenContactForm(event)) {
             contactFormOpenPending = true;
         }
@@ -495,6 +500,34 @@ function shouldOpenContactForm(event) {
         : [];
 
     return [...responseMessages, ...messengerMessages].some(messageContainsOpenFormAction);
+}
+
+function extractLanguageFromResponse(event) {
+    const responseMessages = event && event.detail && event.detail.raw && event.detail.raw.queryResult
+        && Array.isArray(event.detail.raw.queryResult.responseMessages)
+        ? event.detail.raw.queryResult.responseMessages
+        : [];
+
+    const messengerMessages = event && event.detail && event.detail.data && Array.isArray(event.detail.data.messages)
+        ? event.detail.data.messages
+        : [];
+
+    for (const message of [...responseMessages, ...messengerMessages]) {
+        const payload = extractPayload(message);
+        if (!payload || payload.action !== "set_language") {
+            continue;
+        }
+
+        const languageCode = typeof payload.language_code === "string"
+            ? payload.language_code.trim().toLowerCase()
+            : "";
+
+        if (SUPPORTED_LANGUAGES.includes(languageCode)) {
+            return languageCode;
+        }
+    }
+
+    return "";
 }
 
 function messageContainsOpenFormAction(message) {
