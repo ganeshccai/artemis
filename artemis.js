@@ -44,6 +44,9 @@ let translationRefreshTimer = null;
 const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
+let personaHandlersBound = false;
+let chatStateListenersBound = false;
+let chatExpandObserver = null;
 
 const BASE_UI_TRANSLATIONS = {
     contactFormTitle: "Contact Us",
@@ -72,13 +75,24 @@ window.addEventListener("DOMContentLoaded", () => {
     initializeContactForm();
     initializeClientContextCapture();
 
-    setTimeout(() => {
+    mountMessenger(activeLanguage, 1000, true);
+});
+
+function mountMessenger(languageCode, delayMs = 0, shouldOpen = false) {
+    window.setTimeout(() => {
+        isMessengerLoaded = false;
+        hasAutoStartedConversation = false;
+
+        if (activeDfMessenger && activeDfMessenger.parentNode) {
+            activeDfMessenger.parentNode.removeChild(activeDfMessenger);
+        }
+
         const df = document.createElement("df-messenger");
         activeDfMessenger = df;
         df.setAttribute("project-id", "project001-474715");
         df.setAttribute("location", "us-central1");
         df.setAttribute("agent-id", "57dcbcf5-05fd-4556-90d4-3438bc6c28d9");
-        df.setAttribute("language-code", activeLanguage);
+        df.setAttribute("language-code", normalizeLanguage(languageCode));
         df.setAttribute("max-query-length", "-1");
         df.setAttribute("url-allowlist", "*");
         df.setAttribute("storage-option", "none");
@@ -94,14 +108,16 @@ window.addEventListener("DOMContentLoaded", () => {
         document.body.appendChild(df);
 
         ensureCircularBubbleIcon(df);
-        autoOpenChatWindow(df, bubble, CHAT_AUTO_OPEN_DELAY_MS);
+        if (shouldOpen) {
+            autoOpenChatWindow(df, bubble, 300);
+        }
         initializeMobileChatLayout(df);
         initializeChatStateSync(df);
-        attachPersonaHandlers(df);
+        attachPersonaHandlers();
         initializeChatLanguageDropdown(df);
-        startPersonaDecorator(df);
-    }, 1000);
-});
+        startPersonaDecorator();
+    }, delayMs);
+}
 
 function ensureCircularBubbleIcon(dfMessenger) {
     const startTime = Date.now();
@@ -325,30 +341,38 @@ function initializeChatStateSync(dfMessenger) {
         return;
     }
 
-    window.addEventListener("df-chat-open-changed", (event) => {
-        isChatWindowOpen = !!(event && event.detail && event.detail.isOpen);
+    if (!chatStateListenersBound) {
+        window.addEventListener("df-chat-open-changed", (event) => {
+            isChatWindowOpen = !!(event && event.detail && event.detail.isOpen);
 
-        if (isChatWindowOpen) {
-            scheduleAutoStartConversation(dfMessenger);
-            return;
-        }
+            if (isChatWindowOpen) {
+                scheduleAutoStartConversation(activeDfMessenger);
+                return;
+            }
 
-        closeContactForm();
-    });
-
-    document.addEventListener("click", (event) => {
-        if (didUserCloseChat(event)) {
             closeContactForm();
-        }
-    }, true);
+        });
 
-    const observer = new MutationObserver(() => {
+        document.addEventListener("click", (event) => {
+            if (didUserCloseChat(event)) {
+                closeContactForm();
+            }
+        }, true);
+
+        chatStateListenersBound = true;
+    }
+
+    if (chatExpandObserver) {
+        chatExpandObserver.disconnect();
+    }
+
+    chatExpandObserver = new MutationObserver(() => {
         if (!isChatExpanded(dfMessenger)) {
             closeContactForm();
         }
     });
 
-    observer.observe(dfMessenger, {
+    chatExpandObserver.observe(dfMessenger, {
         attributes: true,
         attributeFilter: ["expand"]
     });
@@ -385,9 +409,15 @@ function isChatExpanded(dfMessenger) {
     return expandAttribute === "true";
 }
 
-function attachPersonaHandlers(dfMessenger) {
+function attachPersonaHandlers() {
+    if (personaHandlersBound) {
+        return;
+    }
+
     window.addEventListener("df-user-input-entered", () => {
-        renderUserPersona(dfMessenger);
+        if (activeDfMessenger) {
+            renderUserPersona(activeDfMessenger);
+        }
     });
 
     window.addEventListener("df-request-sent", (event) => {
@@ -396,8 +426,8 @@ function attachPersonaHandlers(dfMessenger) {
             ? requestBody.queryInput.text.text
             : "";
 
-        if (typeof queryText === "string" && queryText.trim()) {
-            renderUserPersona(dfMessenger);
+        if (activeDfMessenger && typeof queryText === "string" && queryText.trim()) {
+            renderUserPersona(activeDfMessenger);
         }
     });
 
@@ -410,14 +440,16 @@ function attachPersonaHandlers(dfMessenger) {
             contactFormOpenPending = true;
         }
 
-        if (messages.length > 0) {
-            renderPersona(dfMessenger, "bot", "Bot 🤖");
+        if (activeDfMessenger && messages.length > 0) {
+            renderPersona(activeDfMessenger, "bot", "Bot 🤖");
         }
 
         if (contactFormOpenPending) {
             scheduleContactFormOpen();
         }
     });
+
+    personaHandlersBound = true;
 }
 
 function initializeContactForm() {
@@ -705,6 +737,7 @@ function applyLanguage(languageCode) {
 
 async function applyLanguageInternal(languageCode) {
     const nextLanguage = normalizeLanguage(languageCode);
+    const previousLanguage = activeLanguage;
     activeLanguage = nextLanguage;
     persistLanguage(nextLanguage);
 
@@ -731,7 +764,12 @@ async function applyLanguageInternal(languageCode) {
     syncChatLanguageDropdownValue(nextLanguage);
 
     if (activeDfMessenger) {
-        activeDfMessenger.setAttribute("language-code", nextLanguage);
+        const wasChatOpen = isChatWindowOpen;
+        if (previousLanguage !== nextLanguage) {
+            mountMessenger(nextLanguage, 0, wasChatOpen);
+        } else {
+            activeDfMessenger.setAttribute("language-code", nextLanguage);
+        }
     }
 }
 
@@ -1428,9 +1466,11 @@ function createPersonaBadgeDataUrl(label, timeLabel, nonce = "") {
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-function startPersonaDecorator(dfMessenger) {
+function startPersonaDecorator() {
     const refresh = () => {
-        decoratePersonaMessages(dfMessenger);
+        if (activeDfMessenger) {
+            decoratePersonaMessages(activeDfMessenger);
+        }
     };
 
     refresh();
