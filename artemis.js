@@ -29,7 +29,12 @@ const AUTO_START_CHAT_EVENT_NAME = "WELCOME";
 const AUTO_START_CHAT_DELAY_MS = 600;
 const LANGUAGE_STORAGE_KEY = "artemis_ui_language";
 const DEFAULT_LANGUAGE = "en";
-const SUPPORTED_LANGUAGES = ["en", "hi"];
+const CHAT_LANGUAGE_OPTIONS = [
+    { code: "en", label: "English" },
+    { code: "hi", label: "Hindi" }
+];
+const SUPPORTED_LANGUAGES = CHAT_LANGUAGE_OPTIONS.map((option) => option.code);
+const CHAT_LANGUAGE_DROPDOWN_ID = "artemis-chat-language-dropdown";
 let activeLanguage = getInitialLanguage();
 
 const UI_TRANSLATIONS = {
@@ -42,7 +47,7 @@ const UI_TRANSLATIONS = {
         emailPlaceholder: "Email",
         messagePlaceholder: "How can we help?",
         submitButton: "Submit",
-        languageLabel: "Language:",
+        languageLabel: "Language",
         statusOpenViaFlask: "Open this page through the Flask app URL to submit the form.",
         statusSubmitting: "Submitting...",
         statusSubmitted: "Submitted successfully.",
@@ -58,7 +63,7 @@ const UI_TRANSLATIONS = {
         emailPlaceholder: "ईमेल",
         messagePlaceholder: "हम आपकी कैसे मदद कर सकते हैं?",
         submitButton: "जमा करें",
-        languageLabel: "भाषा:",
+        languageLabel: "भाषा",
         statusOpenViaFlask: "फॉर्म जमा करने के लिए इस पेज को Flask ऐप URL से खोलें।",
         statusSubmitting: "जमा किया जा रहा है...",
         statusSubmitted: "सफलतापूर्वक जमा किया गया।",
@@ -68,7 +73,6 @@ const UI_TRANSLATIONS = {
 };
 
 window.addEventListener("DOMContentLoaded", () => {
-    initializeLanguageSelector();
     applyLanguage(activeLanguage);
     initializeContactForm();
     initializeClientContextCapture();
@@ -99,6 +103,7 @@ window.addEventListener("DOMContentLoaded", () => {
         initializeMobileChatLayout(df);
         initializeChatStateSync(df);
         attachPersonaHandlers(df);
+        initializeChatLanguageDropdown(df);
         startPersonaDecorator(df);
     }, 1000);
 });
@@ -699,17 +704,6 @@ function renderContactFormSubmissionResponse(name, mobile) {
     activeDfMessenger.renderCustomText(responseText, true);
 }
 
-function initializeLanguageSelector() {
-    const languageButtons = document.querySelectorAll("[data-lang]");
-
-    for (const button of languageButtons) {
-        button.addEventListener("click", () => {
-            const selectedLanguage = button.getAttribute("data-lang") || DEFAULT_LANGUAGE;
-            applyLanguage(selectedLanguage);
-        });
-    }
-}
-
 function applyLanguage(languageCode) {
     const nextLanguage = normalizeLanguage(languageCode);
     activeLanguage = nextLanguage;
@@ -733,16 +727,153 @@ function applyLanguage(languageCode) {
         node.setAttribute("aria-label", getTranslation(key));
     }
 
-    const languageButtons = document.querySelectorAll("[data-lang]");
-    for (const button of languageButtons) {
-        const buttonLanguage = normalizeLanguage(button.getAttribute("data-lang") || "");
-        const isSelected = buttonLanguage === nextLanguage;
-        button.classList.toggle("is-active", isSelected);
-        button.setAttribute("aria-pressed", isSelected ? "true" : "false");
-    }
+    syncChatLanguageDropdownValue(nextLanguage);
 
     if (activeDfMessenger) {
         activeDfMessenger.setAttribute("language-code", nextLanguage === "hi" ? "hi" : "en");
+    }
+}
+
+function initializeChatLanguageDropdown(dfMessenger) {
+    const ensureMounted = () => {
+        mountChatLanguageDropdown(dfMessenger);
+    };
+
+    ensureMounted();
+
+    window.addEventListener("df-chat-open-changed", () => {
+        window.setTimeout(ensureMounted, 120);
+    });
+
+    window.setInterval(ensureMounted, 1200);
+}
+
+function mountChatLanguageDropdown(dfMessenger) {
+    if (!dfMessenger) {
+        return;
+    }
+
+    const host = findChatFooterHost(dfMessenger);
+    if (!host) {
+        return;
+    }
+
+    if (host.querySelector(`#${CHAT_LANGUAGE_DROPDOWN_ID}`)) {
+        syncChatLanguageDropdownValue(activeLanguage);
+        return;
+    }
+
+    const wrapper = document.createElement("div");
+    wrapper.setAttribute("data-artemis-chat-language", "true");
+    wrapper.style.display = "flex";
+    wrapper.style.justifyContent = "flex-end";
+    wrapper.style.alignItems = "center";
+    wrapper.style.gap = "6px";
+    wrapper.style.marginTop = "6px";
+    wrapper.style.paddingTop = "4px";
+    wrapper.style.borderTop = "1px solid rgba(15, 118, 110, 0.16)";
+
+    const label = document.createElement("label");
+    label.setAttribute("for", CHAT_LANGUAGE_DROPDOWN_ID);
+    label.textContent = getTranslation("languageLabel");
+    label.style.fontSize = "11px";
+    label.style.fontWeight = "700";
+    label.style.color = "#0f766e";
+
+    const select = document.createElement("select");
+    select.id = CHAT_LANGUAGE_DROPDOWN_ID;
+    select.setAttribute("aria-label", getTranslation("languageLabel"));
+    select.style.border = "1px solid #cfe0e8";
+    select.style.borderRadius = "10px";
+    select.style.background = "#ffffff";
+    select.style.color = "#0f172a";
+    select.style.font = "600 12px Manrope, Segoe UI, sans-serif";
+    select.style.padding = "5px 8px";
+    select.style.outline = "none";
+    select.style.cursor = "pointer";
+
+    for (const optionData of CHAT_LANGUAGE_OPTIONS) {
+        const option = document.createElement("option");
+        option.value = optionData.code;
+        option.textContent = optionData.label;
+        select.appendChild(option);
+    }
+
+    select.value = activeLanguage;
+    select.addEventListener("change", (event) => {
+        const selectedValue = event.target && event.target.value ? event.target.value : DEFAULT_LANGUAGE;
+        applyLanguage(selectedValue);
+    });
+
+    wrapper.appendChild(label);
+    wrapper.appendChild(select);
+    host.appendChild(wrapper);
+}
+
+function findChatFooterHost(dfMessenger) {
+    const roots = collectSearchRoots(dfMessenger);
+    const selectors = [
+        "form",
+        "[data-testid*='input']",
+        "[class*='input']",
+        "[part*='input']",
+        "footer"
+    ];
+
+    for (const root of roots) {
+        if (!root || root === document || !root.querySelectorAll) {
+            continue;
+        }
+
+        for (const selector of selectors) {
+            const candidates = root.querySelectorAll(selector);
+
+            for (const candidate of candidates) {
+                if (!candidate || !candidate.querySelector) {
+                    continue;
+                }
+
+                const hasMessageInput = candidate.querySelector("textarea, input[type='text'], [contenteditable='true']");
+                if (!hasMessageInput) {
+                    continue;
+                }
+
+                if (candidate.querySelector(`[id='${CHAT_LANGUAGE_DROPDOWN_ID}']`)) {
+                    return candidate;
+                }
+
+                return candidate;
+            }
+        }
+    }
+
+    return null;
+}
+
+function syncChatLanguageDropdownValue(languageCode) {
+    const dropdowns = document.querySelectorAll(`#${CHAT_LANGUAGE_DROPDOWN_ID}`);
+
+    for (const dropdown of dropdowns) {
+        dropdown.value = normalizeLanguage(languageCode);
+        dropdown.setAttribute("aria-label", getTranslation("languageLabel"));
+
+        const label = dropdown.previousElementSibling;
+        if (label && label.tagName === "LABEL") {
+            label.textContent = getTranslation("languageLabel");
+        }
+    }
+
+    if (activeDfMessenger && activeDfMessenger.shadowRoot) {
+        const shadowDropdown = activeDfMessenger.shadowRoot.querySelector(`#${CHAT_LANGUAGE_DROPDOWN_ID}`);
+        if (shadowDropdown) {
+            shadowDropdown.value = normalizeLanguage(languageCode);
+            shadowDropdown.setAttribute("aria-label", getTranslation("languageLabel"));
+
+            const label = shadowDropdown.previousElementSibling;
+            if (label && label.tagName === "LABEL") {
+                label.textContent = getTranslation("languageLabel");
+            }
+        }
     }
 }
 
