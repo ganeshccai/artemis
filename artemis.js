@@ -705,8 +705,16 @@ function applyLanguage(languageCode) {
 
 async function applyLanguageInternal(languageCode) {
     const nextLanguage = normalizeLanguage(languageCode);
+    const previousLanguage = activeLanguage;
     activeLanguage = nextLanguage;
     persistLanguage(nextLanguage);
+
+    // Recreate chat session with the new language code by reloading once.
+    // This avoids stale English session state when switching languages.
+    if (activeDfMessenger && previousLanguage !== nextLanguage) {
+        window.location.reload();
+        return;
+    }
 
     await ensureUiTranslationsForLanguage(nextLanguage);
 
