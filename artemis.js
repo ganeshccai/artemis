@@ -31,7 +31,8 @@ const LANGUAGE_STORAGE_KEY = "artemis_ui_language";
 const DEFAULT_LANGUAGE = "en";
 const CHAT_LANGUAGE_OPTIONS = [
     { code: "en", label: "English" },
-    { code: "hi", label: "Hindi" }
+    { code: "hi", label: "Hindi" },
+    { code: "te", label: "Telugu" }
 ];
 const SUPPORTED_LANGUAGES = CHAT_LANGUAGE_OPTIONS.map((option) => option.code);
 const CHAT_LANGUAGE_DROPDOWN_ID = "artemis-chat-language-dropdown";
@@ -76,6 +77,22 @@ const UI_TRANSLATIONS = {
         statusSubmitted: "सफलतापूर्वक जमा किया गया।",
         statusSubmissionFailed: "जमा नहीं हो सका। कृपया फिर से प्रयास करें।",
         contactResponseThanks: "जानकारी साझा करने के लिए धन्यवाद"
+    },
+    te: {
+        contactFormTitle: "మమ్మల్ని సంప్రదించండి",
+        contactFormSubtitle: "మీ వివరాలను పంచుకోండి, మేము మిమ్మల్ని సంప్రదిస్తాము.",
+        closeContactFormAria: "సంప్రదింపు ఫారమ్‌ను మూసివేయండి",
+        namePlaceholder: "పేరు",
+        mobilePlaceholder: "మొబైల్ నంబర్",
+        emailPlaceholder: "ఈమెయిల్",
+        messagePlaceholder: "మేము మీకు ఎలా సహాయం చేయగలం?",
+        submitButton: "సమర్పించండి",
+        languageLabel: "భాష",
+        statusOpenViaFlask: "ఫారమ్ సమర్పించడానికి ఈ పేజీని Flask యాప్ URL ద్వారా తెరవండి.",
+        statusSubmitting: "సమర్పిస్తోంది...",
+        statusSubmitted: "విజయవంతంగా సమర్పించబడింది.",
+        statusSubmissionFailed: "సమర్పణ విఫలమైంది. దయచేసి మళ్లీ ప్రయత్నించండి.",
+        contactResponseThanks: "వివరాలు పంచుకున్నందుకు ధన్యవాదాలు"
     }
 };
 
@@ -90,7 +107,7 @@ window.addEventListener("DOMContentLoaded", () => {
         df.setAttribute("project-id", "project001-474715");
         df.setAttribute("location", "us-central1");
         df.setAttribute("agent-id", "57dcbcf5-05fd-4556-90d4-3438bc6c28d9");
-        df.setAttribute("language-code", activeLanguage === "hi" ? "hi" : "en");
+        df.setAttribute("language-code", getChatLanguageCode(activeLanguage));
         df.setAttribute("max-query-length", "-1");
         df.setAttribute("url-allowlist", "*");
         df.setAttribute("storage-option", "none");
@@ -739,7 +756,7 @@ function applyLanguage(languageCode) {
     syncChatLanguageDropdownValue(nextLanguage);
 
     if (activeDfMessenger) {
-        activeDfMessenger.setAttribute("language-code", nextLanguage === "hi" ? "hi" : "en");
+        activeDfMessenger.setAttribute("language-code", getChatLanguageCode(nextLanguage));
     }
 
     scheduleDomTranslationRefresh();
@@ -1162,7 +1179,18 @@ function getInitialLanguage() {
         return "hi";
     }
 
+    if (browserLanguage.startsWith("te")) {
+        return "te";
+    }
+
     return DEFAULT_LANGUAGE;
+}
+
+function getChatLanguageCode(languageCode) {
+    const normalizedLanguage = normalizeLanguage(languageCode);
+    return normalizedLanguage === "hi" || normalizedLanguage === "te"
+        ? normalizedLanguage
+        : "en";
 }
 
 function persistLanguage(languageCode) {
