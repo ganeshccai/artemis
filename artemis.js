@@ -35,7 +35,14 @@ const CHAT_LANGUAGE_OPTIONS = [
 ];
 const SUPPORTED_LANGUAGES = CHAT_LANGUAGE_OPTIONS.map((option) => option.code);
 const CHAT_LANGUAGE_DROPDOWN_ID = "artemis-chat-language-dropdown";
+const GOOGLE_TRANSLATE_ENDPOINT = "https://translate.googleapis.com/translate_a/single";
+const DOM_TRANSLATION_DEBOUNCE_MS = 180;
 let activeLanguage = getInitialLanguage();
+let latestTranslationRunId = 0;
+let translationRefreshTimer = null;
+const originalTextNodeContent = new Map();
+const originalElementAttributes = new Map();
+const googleTranslationCache = new Map();
 
 const UI_TRANSLATIONS = {
     en: {
@@ -422,6 +429,8 @@ function attachPersonaHandlers(dfMessenger) {
         if (contactFormOpenPending) {
             scheduleContactFormOpen();
         }
+
+        scheduleDomTranslationRefresh();
     });
 }
 
@@ -732,6 +741,8 @@ function applyLanguage(languageCode) {
     if (activeDfMessenger) {
         activeDfMessenger.setAttribute("language-code", nextLanguage === "hi" ? "hi" : "en");
     }
+
+    scheduleDomTranslationRefresh();
 }
 
 function initializeChatLanguageDropdown(dfMessenger) {
@@ -880,6 +891,260 @@ function syncChatLanguageDropdownValue(languageCode) {
 function getTranslation(key) {
     const translationTable = UI_TRANSLATIONS[activeLanguage] || UI_TRANSLATIONS[DEFAULT_LANGUAGE];
     return translationTable[key] || UI_TRANSLATIONS[DEFAULT_LANGUAGE][key] || key;
+}
+
+function scheduleDomTranslationRefresh() {
+    if (translationRefreshTimer) {
+        window.clearTimeout(translationRefreshTimer);
+    }
+
+    translationRefreshTimer = window.setTimeout(() => {
+        translationRefreshTimer = null;
+        applyDomTranslation(activeLanguage);
+    }, DOM_TRANSLATION_DEBOUNCE_MS);
+}
+
+async function applyDomTranslation(languageCode) {
+    const normalizedLanguage = normalizeLanguage(languageCode);
+    const runId = latestTranslationRunId + 1;
+    latestTranslationRunId = runId;
+
+    if (normalizedLanguage === DEFAULT_LANGUAGE) {
+        restoreOriginalDomContent();
+        return;
+    }
+
+    const targets = collectTranslationTargets();
+    if (!targets.length) {
+        return;
+    }
+
+    const uniqueTexts = [...new Set(targets.map((target) => target.text))];
+    const translatedLookup = new Map();
+
+    await Promise.all(uniqueTexts.map(async (sourceText) => {
+        const translatedText = await translateTextUsingGoogle(sourceText, normalizedLanguage);
+        translatedLookup.set(sourceText, translatedText || sourceText);
+    }));
+
+    if (runId !== latestTranslationRunId) {
+        return;
+    }
+
+    for (const target of targets) {
+        const translatedText = translatedLookup.get(target.text) || target.text;
+
+        if (target.type === "text") {
+            target.node.nodeValue = translatedText;
+            continue;
+        }
+
+        if (target.type === "attr") {
+            target.element.setAttribute(target.attribute, translatedText);
+        }
+    }
+}
+
+function collectTranslationTargets() {
+    const targets = [];
+    const roots = getTranslationRoots();
+
+    for (const root of roots) {
+        if (!root) {
+            continue;
+        }
+
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        let currentTextNode = walker.nextNode();
+
+        while (currentTextNode) {
+            const parentElement = currentTextNode.parentElement;
+
+            if (isTranslatableTextNode(currentTextNode, parentElement)) {
+                if (!originalTextNodeContent.has(currentTextNode)) {
+                    originalTextNodeContent.set(currentTextNode, currentTextNode.nodeValue || "");
+                }
+
+                const sourceText = (originalTextNodeContent.get(currentTextNode) || "").trim();
+                if (sourceText) {
+                    targets.push({
+                        type: "text",
+                        node: currentTextNode,
+                        text: sourceText
+                    });
+                }
+            }
+
+            currentTextNode = walker.nextNode();
+        }
+
+        if (root.querySelectorAll) {
+            const attributeElements = root.querySelectorAll("input[placeholder], textarea[placeholder], button[aria-label], [title]");
+
+            for (const element of attributeElements) {
+                if (shouldSkipTranslationElement(element)) {
+                    continue;
+                }
+
+                const attributesToTranslate = ["placeholder", "aria-label", "title"];
+
+                for (const attribute of attributesToTranslate) {
+                    const currentValue = element.getAttribute(attribute);
+                    if (!currentValue || !isLikelyNaturalLanguage(currentValue)) {
+                        continue;
+                    }
+
+                    if (!originalElementAttributes.has(element)) {
+                        originalElementAttributes.set(element, {});
+                    }
+
+                    const originalAttributes = originalElementAttributes.get(element);
+                    if (!Object.prototype.hasOwnProperty.call(originalAttributes, attribute)) {
+                        originalAttributes[attribute] = currentValue;
+                    }
+
+                    const sourceText = (originalAttributes[attribute] || "").trim();
+                    if (sourceText) {
+                        targets.push({
+                            type: "attr",
+                            element,
+                            attribute,
+                            text: sourceText
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    return targets;
+}
+
+function getTranslationRoots() {
+    const roots = [document.body];
+
+    if (activeDfMessenger) {
+        const messengerRoots = collectSearchRoots(activeDfMessenger);
+        for (const root of messengerRoots) {
+            if (root && !roots.includes(root)) {
+                roots.push(root);
+            }
+        }
+    }
+
+    return roots;
+}
+
+function isTranslatableTextNode(textNode, parentElement) {
+    if (!textNode || !parentElement) {
+        return false;
+    }
+
+    if (!textNode.nodeValue || !isLikelyNaturalLanguage(textNode.nodeValue)) {
+        return false;
+    }
+
+    if (shouldSkipTranslationElement(parentElement)) {
+        return false;
+    }
+
+    return true;
+}
+
+function shouldSkipTranslationElement(element) {
+    if (!element || !element.closest) {
+        return true;
+    }
+
+    if (element.closest("script, style, noscript, code, pre, svg, .persona-badge")) {
+        return true;
+    }
+
+    if (element.closest("#contact-form-fields") && element.matches("input, textarea")) {
+        return true;
+    }
+
+    return false;
+}
+
+function isLikelyNaturalLanguage(value) {
+    const text = typeof value === "string" ? value.trim() : "";
+    if (!text) {
+        return false;
+    }
+
+    if (/^[\d\s.,:;!?()\-_/\\]+$/.test(text)) {
+        return false;
+    }
+
+    if (/^https?:\/\//i.test(text)) {
+        return false;
+    }
+
+    return true;
+}
+
+function restoreOriginalDomContent() {
+    for (const [textNode, originalValue] of originalTextNodeContent.entries()) {
+        if (textNode && textNode.isConnected) {
+            textNode.nodeValue = originalValue;
+        }
+    }
+
+    for (const [element, attributes] of originalElementAttributes.entries()) {
+        if (!element || !element.isConnected) {
+            continue;
+        }
+
+        for (const [attribute, originalValue] of Object.entries(attributes)) {
+            if (typeof originalValue === "string") {
+                element.setAttribute(attribute, originalValue);
+            }
+        }
+    }
+}
+
+async function translateTextUsingGoogle(sourceText, targetLanguage) {
+    const cacheKey = `${targetLanguage}::${sourceText}`;
+    if (googleTranslationCache.has(cacheKey)) {
+        return googleTranslationCache.get(cacheKey);
+    }
+
+    try {
+        const queryParams = new URLSearchParams({
+            client: "gtx",
+            sl: "auto",
+            tl: targetLanguage,
+            dt: "t",
+            q: sourceText
+        });
+        const endpoint = `${GOOGLE_TRANSLATE_ENDPOINT}?${queryParams.toString()}`;
+        const response = await fetch(endpoint, { method: "GET" });
+
+        if (!response.ok) {
+            googleTranslationCache.set(cacheKey, sourceText);
+            return sourceText;
+        }
+
+        const payload = await response.json();
+        const translatedText = extractGoogleTranslatedText(payload) || sourceText;
+        googleTranslationCache.set(cacheKey, translatedText);
+        return translatedText;
+    } catch {
+        googleTranslationCache.set(cacheKey, sourceText);
+        return sourceText;
+    }
+}
+
+function extractGoogleTranslatedText(payload) {
+    if (!Array.isArray(payload) || !Array.isArray(payload[0])) {
+        return "";
+    }
+
+    return payload[0]
+        .map((segment) => (Array.isArray(segment) && typeof segment[0] === "string" ? segment[0] : ""))
+        .join("")
+        .trim();
 }
 
 function getInitialLanguage() {
