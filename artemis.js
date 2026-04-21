@@ -31,6 +31,7 @@ const LANGUAGE_STORAGE_KEY = "artemis_ui_language";
 const DEFAULT_LANGUAGE = "en";
 const CHAT_LANGUAGE_OPTIONS = [
     { code: "en", label: "English" },
+     { code: "te", label: "Telugu" },
     { code: "hi", label: "Hindi" }
 ];
 const SUPPORTED_LANGUAGES = CHAT_LANGUAGE_OPTIONS.map((option) => option.code);
