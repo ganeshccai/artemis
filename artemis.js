@@ -31,7 +31,6 @@ const LANGUAGE_STORAGE_KEY = "artemis_ui_language";
 const DEFAULT_LANGUAGE = "en";
 const CHAT_LANGUAGE_OPTIONS = [
     { code: "en", label: "English" },
-    { code: "te", label: "Telugu" },
     { code: "hi", label: "Hindi" }
 ];
 const SUPPORTED_LANGUAGES = CHAT_LANGUAGE_OPTIONS.map((option) => option.code);
@@ -44,55 +43,54 @@ let translationRefreshTimer = null;
 const originalTextNodeContent = new Map();
 const originalElementAttributes = new Map();
 const googleTranslationCache = new Map();
-let personaHandlersBound = false;
-let chatStateListenersBound = false;
-let chatExpandObserver = null;
 
-const BASE_UI_TRANSLATIONS = {
-    contactFormTitle: "Contact Us",
-    contactFormSubtitle: "Share your details and we will contact you.",
-    closeContactFormAria: "Close contact form",
-    namePlaceholder: "Name",
-    mobilePlaceholder: "Mobile number",
-    emailPlaceholder: "Email",
-    messagePlaceholder: "How can we help?",
-    submitButton: "Submit",
-    languageLabel: "Language",
-    statusOpenViaFlask: "Open this page through the Flask app URL to submit the form.",
-    statusSubmitting: "Submitting...",
-    statusSubmitted: "Submitted successfully.",
-    statusSubmissionFailed: "Submission failed. Please try again.",
-    contactResponseThanks: "Thank You for sharing the details"
-};
 const UI_TRANSLATIONS = {
-    [DEFAULT_LANGUAGE]: BASE_UI_TRANSLATIONS
+    en: {
+        contactFormTitle: "Contact Us",
+        contactFormSubtitle: "Share your details and we will contact you.",
+        closeContactFormAria: "Close contact form",
+        namePlaceholder: "Name",
+        mobilePlaceholder: "Mobile number",
+        emailPlaceholder: "Email",
+        messagePlaceholder: "How can we help?",
+        submitButton: "Submit",
+        languageLabel: "Language",
+        statusOpenViaFlask: "Open this page through the Flask app URL to submit the form.",
+        statusSubmitting: "Submitting...",
+        statusSubmitted: "Submitted successfully.",
+        statusSubmissionFailed: "Submission failed. Please try again.",
+        contactResponseThanks: "Thank You for sharing the details"
+    },
+    hi: {
+        contactFormTitle: "संपर्क करें",
+        contactFormSubtitle: "अपनी जानकारी साझा करें, हम आपसे संपर्क करेंगे।",
+        closeContactFormAria: "संपर्क फॉर्म बंद करें",
+        namePlaceholder: "नाम",
+        mobilePlaceholder: "मोबाइल नंबर",
+        emailPlaceholder: "ईमेल",
+        messagePlaceholder: "हम आपकी कैसे मदद कर सकते हैं?",
+        submitButton: "जमा करें",
+        languageLabel: "भाषा",
+        statusOpenViaFlask: "फॉर्म जमा करने के लिए इस पेज को Flask ऐप URL से खोलें।",
+        statusSubmitting: "जमा किया जा रहा है...",
+        statusSubmitted: "सफलतापूर्वक जमा किया गया।",
+        statusSubmissionFailed: "जमा नहीं हो सका। कृपया फिर से प्रयास करें।",
+        contactResponseThanks: "जानकारी साझा करने के लिए धन्यवाद"
+    }
 };
 
 window.addEventListener("DOMContentLoaded", () => {
-    applyLanguage(activeLanguage).catch(() => {
-        // Keep UI responsive even if translation requests fail.
-    });
+    applyLanguage(activeLanguage);
     initializeContactForm();
     initializeClientContextCapture();
 
-    mountMessenger(activeLanguage, 1000, true);
-});
-
-function mountMessenger(languageCode, delayMs = 0, shouldOpen = false) {
-    window.setTimeout(() => {
-        isMessengerLoaded = false;
-        hasAutoStartedConversation = false;
-
-        if (activeDfMessenger && activeDfMessenger.parentNode) {
-            activeDfMessenger.parentNode.removeChild(activeDfMessenger);
-        }
-
+    setTimeout(() => {
         const df = document.createElement("df-messenger");
         activeDfMessenger = df;
         df.setAttribute("project-id", "project001-474715");
         df.setAttribute("location", "us-central1");
         df.setAttribute("agent-id", "57dcbcf5-05fd-4556-90d4-3438bc6c28d9");
-        df.setAttribute("language-code", normalizeLanguage(languageCode));
+        df.setAttribute("language-code", activeLanguage === "hi" ? "hi" : "en");
         df.setAttribute("max-query-length", "-1");
         df.setAttribute("url-allowlist", "*");
         df.setAttribute("storage-option", "none");
@@ -108,16 +106,14 @@ function mountMessenger(languageCode, delayMs = 0, shouldOpen = false) {
         document.body.appendChild(df);
 
         ensureCircularBubbleIcon(df);
-        if (shouldOpen) {
-            autoOpenChatWindow(df, bubble, 300);
-        }
+        autoOpenChatWindow(df, bubble, CHAT_AUTO_OPEN_DELAY_MS);
         initializeMobileChatLayout(df);
         initializeChatStateSync(df);
-        attachPersonaHandlers();
+        attachPersonaHandlers(df);
         initializeChatLanguageDropdown(df);
-        startPersonaDecorator();
-    }, delayMs);
-}
+        startPersonaDecorator(df);
+    }, 1000);
+});
 
 function ensureCircularBubbleIcon(dfMessenger) {
     const startTime = Date.now();
@@ -341,38 +337,30 @@ function initializeChatStateSync(dfMessenger) {
         return;
     }
 
-    if (!chatStateListenersBound) {
-        window.addEventListener("df-chat-open-changed", (event) => {
-            isChatWindowOpen = !!(event && event.detail && event.detail.isOpen);
+    window.addEventListener("df-chat-open-changed", (event) => {
+        isChatWindowOpen = !!(event && event.detail && event.detail.isOpen);
 
-            if (isChatWindowOpen) {
-                scheduleAutoStartConversation(activeDfMessenger);
-                return;
-            }
+        if (isChatWindowOpen) {
+            scheduleAutoStartConversation(dfMessenger);
+            return;
+        }
 
+        closeContactForm();
+    });
+
+    document.addEventListener("click", (event) => {
+        if (didUserCloseChat(event)) {
             closeContactForm();
-        });
+        }
+    }, true);
 
-        document.addEventListener("click", (event) => {
-            if (didUserCloseChat(event)) {
-                closeContactForm();
-            }
-        }, true);
-
-        chatStateListenersBound = true;
-    }
-
-    if (chatExpandObserver) {
-        chatExpandObserver.disconnect();
-    }
-
-    chatExpandObserver = new MutationObserver(() => {
+    const observer = new MutationObserver(() => {
         if (!isChatExpanded(dfMessenger)) {
             closeContactForm();
         }
     });
 
-    chatExpandObserver.observe(dfMessenger, {
+    observer.observe(dfMessenger, {
         attributes: true,
         attributeFilter: ["expand"]
     });
@@ -409,15 +397,9 @@ function isChatExpanded(dfMessenger) {
     return expandAttribute === "true";
 }
 
-function attachPersonaHandlers() {
-    if (personaHandlersBound) {
-        return;
-    }
-
+function attachPersonaHandlers(dfMessenger) {
     window.addEventListener("df-user-input-entered", () => {
-        if (activeDfMessenger) {
-            renderUserPersona(activeDfMessenger);
-        }
+        renderUserPersona(dfMessenger);
     });
 
     window.addEventListener("df-request-sent", (event) => {
@@ -426,8 +408,8 @@ function attachPersonaHandlers() {
             ? requestBody.queryInput.text.text
             : "";
 
-        if (activeDfMessenger && typeof queryText === "string" && queryText.trim()) {
-            renderUserPersona(activeDfMessenger);
+        if (typeof queryText === "string" && queryText.trim()) {
+            renderUserPersona(dfMessenger);
         }
     });
 
@@ -440,16 +422,16 @@ function attachPersonaHandlers() {
             contactFormOpenPending = true;
         }
 
-        if (activeDfMessenger && messages.length > 0) {
-            renderPersona(activeDfMessenger, "bot", "Bot 🤖");
+        if (messages.length > 0) {
+            renderPersona(dfMessenger, "bot", "Bot 🤖");
         }
 
         if (contactFormOpenPending) {
             scheduleContactFormOpen();
         }
-    });
 
-    personaHandlersBound = true;
+        scheduleDomTranslationRefresh();
+    });
 }
 
 function initializeContactForm() {
@@ -732,16 +714,9 @@ function renderContactFormSubmissionResponse(name, mobile) {
 }
 
 function applyLanguage(languageCode) {
-    return applyLanguageInternal(languageCode);
-}
-
-async function applyLanguageInternal(languageCode) {
     const nextLanguage = normalizeLanguage(languageCode);
-    const previousLanguage = activeLanguage;
     activeLanguage = nextLanguage;
     persistLanguage(nextLanguage);
-
-    await ensureUiTranslationsForLanguage(nextLanguage);
 
     const textNodes = document.querySelectorAll("[data-i18n]");
     for (const node of textNodes) {
@@ -764,13 +739,10 @@ async function applyLanguageInternal(languageCode) {
     syncChatLanguageDropdownValue(nextLanguage);
 
     if (activeDfMessenger) {
-        const wasChatOpen = isChatWindowOpen;
-        if (previousLanguage !== nextLanguage) {
-            mountMessenger(nextLanguage, 0, wasChatOpen);
-        } else {
-            activeDfMessenger.setAttribute("language-code", nextLanguage);
-        }
+        activeDfMessenger.setAttribute("language-code", nextLanguage === "hi" ? "hi" : "en");
     }
+
+    scheduleDomTranslationRefresh();
 }
 
 function initializeChatLanguageDropdown(dfMessenger) {
@@ -841,9 +813,7 @@ function mountChatLanguageDropdown(dfMessenger) {
     select.value = activeLanguage;
     select.addEventListener("change", (event) => {
         const selectedValue = event.target && event.target.value ? event.target.value : DEFAULT_LANGUAGE;
-        applyLanguage(selectedValue).catch(() => {
-            // Keep language switching non-blocking on network failures.
-        });
+        applyLanguage(selectedValue);
     });
 
     wrapper.appendChild(label);
@@ -920,27 +890,18 @@ function syncChatLanguageDropdownValue(languageCode) {
 
 function getTranslation(key) {
     const translationTable = UI_TRANSLATIONS[activeLanguage] || UI_TRANSLATIONS[DEFAULT_LANGUAGE];
-    return translationTable[key] || BASE_UI_TRANSLATIONS[key] || key;
-}
-
-async function ensureUiTranslationsForLanguage(languageCode) {
-    const normalizedLanguage = normalizeLanguage(languageCode);
-
-    if (normalizedLanguage === DEFAULT_LANGUAGE || UI_TRANSLATIONS[normalizedLanguage]) {
-        return;
-    }
-
-    const entries = Object.entries(BASE_UI_TRANSLATIONS);
-    const translatedEntries = await Promise.all(entries.map(async ([key, value]) => {
-        const translatedValue = await translateTextUsingGoogle(value, normalizedLanguage);
-        return [key, translatedValue || value];
-    }));
-
-    UI_TRANSLATIONS[normalizedLanguage] = Object.fromEntries(translatedEntries);
+    return translationTable[key] || UI_TRANSLATIONS[DEFAULT_LANGUAGE][key] || key;
 }
 
 function scheduleDomTranslationRefresh() {
-    // DOM-level screen translation is intentionally disabled.
+    if (translationRefreshTimer) {
+        window.clearTimeout(translationRefreshTimer);
+    }
+
+    translationRefreshTimer = window.setTimeout(() => {
+        translationRefreshTimer = null;
+        applyDomTranslation(activeLanguage);
+    }, DOM_TRANSLATION_DEBOUNCE_MS);
 }
 
 async function applyDomTranslation(languageCode) {
@@ -982,7 +943,6 @@ async function applyDomTranslation(languageCode) {
             target.element.setAttribute(target.attribute, translatedText);
         }
     }
-
 }
 
 function collectTranslationTargets() {
@@ -1100,10 +1060,6 @@ function shouldSkipTranslationElement(element) {
         return true;
     }
 
-    if (element.closest("[data-artemis-chat-language='true']") || element.closest(`#${CHAT_LANGUAGE_DROPDOWN_ID}`)) {
-        return true;
-    }
-
     if (element.closest("#contact-form-fields") && element.matches("input, textarea")) {
         return true;
     }
@@ -1199,6 +1155,11 @@ function getInitialLanguage() {
         }
     } catch {
         // Ignore storage failures and fall back to defaults.
+    }
+
+    const browserLanguage = (navigator.language || "").toLowerCase();
+    if (browserLanguage.startsWith("hi")) {
+        return "hi";
     }
 
     return DEFAULT_LANGUAGE;
@@ -1466,11 +1427,9 @@ function createPersonaBadgeDataUrl(label, timeLabel, nonce = "") {
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-function startPersonaDecorator() {
+function startPersonaDecorator(dfMessenger) {
     const refresh = () => {
-        if (activeDfMessenger) {
-            decoratePersonaMessages(activeDfMessenger);
-        }
+        decoratePersonaMessages(dfMessenger);
     };
 
     refresh();
