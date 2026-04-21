@@ -27,8 +27,49 @@ const API_BASE_URL_META_NAME = "artemis-api-base-url";
 const MOBILE_CHAT_BREAKPOINT_PX = 768;
 const AUTO_START_CHAT_EVENT_NAME = "WELCOME";
 const AUTO_START_CHAT_DELAY_MS = 600;
+const LANGUAGE_STORAGE_KEY = "artemis_ui_language";
+const DEFAULT_LANGUAGE = "en";
+const SUPPORTED_LANGUAGES = ["en", "hi"];
+let activeLanguage = getInitialLanguage();
+
+const UI_TRANSLATIONS = {
+    en: {
+        contactFormTitle: "Contact Us",
+        contactFormSubtitle: "Share your details and we will contact you.",
+        closeContactFormAria: "Close contact form",
+        namePlaceholder: "Name",
+        mobilePlaceholder: "Mobile number",
+        emailPlaceholder: "Email",
+        messagePlaceholder: "How can we help?",
+        submitButton: "Submit",
+        languageLabel: "Language:",
+        statusOpenViaFlask: "Open this page through the Flask app URL to submit the form.",
+        statusSubmitting: "Submitting...",
+        statusSubmitted: "Submitted successfully.",
+        statusSubmissionFailed: "Submission failed. Please try again.",
+        contactResponseThanks: "Thank You for sharing the details"
+    },
+    hi: {
+        contactFormTitle: "संपर्क करें",
+        contactFormSubtitle: "अपनी जानकारी साझा करें, हम आपसे संपर्क करेंगे।",
+        closeContactFormAria: "संपर्क फॉर्म बंद करें",
+        namePlaceholder: "नाम",
+        mobilePlaceholder: "मोबाइल नंबर",
+        emailPlaceholder: "ईमेल",
+        messagePlaceholder: "हम आपकी कैसे मदद कर सकते हैं?",
+        submitButton: "जमा करें",
+        languageLabel: "भाषा:",
+        statusOpenViaFlask: "फॉर्म जमा करने के लिए इस पेज को Flask ऐप URL से खोलें।",
+        statusSubmitting: "जमा किया जा रहा है...",
+        statusSubmitted: "सफलतापूर्वक जमा किया गया।",
+        statusSubmissionFailed: "जमा नहीं हो सका। कृपया फिर से प्रयास करें।",
+        contactResponseThanks: "जानकारी साझा करने के लिए धन्यवाद"
+    }
+};
 
 window.addEventListener("DOMContentLoaded", () => {
+    initializeLanguageSelector();
+    applyLanguage(activeLanguage);
     initializeContactForm();
     initializeClientContextCapture();
 
@@ -38,7 +79,7 @@ window.addEventListener("DOMContentLoaded", () => {
         df.setAttribute("project-id", "project001-474715");
         df.setAttribute("location", "us-central1");
         df.setAttribute("agent-id", "57dcbcf5-05fd-4556-90d4-3438bc6c28d9");
-        df.setAttribute("language-code", "en");
+        df.setAttribute("language-code", activeLanguage === "hi" ? "hi" : "en");
         df.setAttribute("max-query-length", "-1");
         df.setAttribute("url-allowlist", "*");
         df.setAttribute("storage-option", "none");
@@ -561,7 +602,7 @@ function submitContactForm(event) {
 
     if (!endpoint) {
         if (status) {
-            status.textContent = "Open this page through the Flask app URL to submit the form.";
+            status.textContent = getTranslation("statusOpenViaFlask");
             status.classList.add("is-error");
             status.classList.remove("is-success");
         }
@@ -569,7 +610,7 @@ function submitContactForm(event) {
     }
 
     if (status) {
-        status.textContent = "Submitting...";
+        status.textContent = getTranslation("statusSubmitting");
         status.classList.remove("is-success", "is-error");
     }
 
@@ -602,7 +643,7 @@ function submitContactForm(event) {
             }
 
             if (status) {
-                status.textContent = responsePayload.message || "Submitted successfully.";
+                status.textContent = responsePayload.message || getTranslation("statusSubmitted");
                 status.classList.add("is-success");
                 status.classList.remove("is-error");
             }
@@ -629,7 +670,7 @@ function submitContactForm(event) {
         })
         .catch((error) => {
             if (status) {
-                status.textContent = error.message || "Submission failed. Please try again.";
+                status.textContent = error.message || getTranslation("statusSubmissionFailed");
                 status.classList.add("is-error");
                 status.classList.remove("is-success");
             }
@@ -651,11 +692,94 @@ function renderContactFormSubmissionResponse(name, mobile) {
     const responseText = [
         `Name - ${safeName}`,
         `mobile - ${safeMobile}`,
-        "Thank You for sharing the details"
+        getTranslation("contactResponseThanks")
     ].join("  \n");
 
     renderPersona(activeDfMessenger, "bot", "Bot 🤖");
     activeDfMessenger.renderCustomText(responseText, true);
+}
+
+function initializeLanguageSelector() {
+    const languageButtons = document.querySelectorAll("[data-lang]");
+
+    for (const button of languageButtons) {
+        button.addEventListener("click", () => {
+            const selectedLanguage = button.getAttribute("data-lang") || DEFAULT_LANGUAGE;
+            applyLanguage(selectedLanguage);
+        });
+    }
+}
+
+function applyLanguage(languageCode) {
+    const nextLanguage = normalizeLanguage(languageCode);
+    activeLanguage = nextLanguage;
+    persistLanguage(nextLanguage);
+
+    const textNodes = document.querySelectorAll("[data-i18n]");
+    for (const node of textNodes) {
+        const key = node.getAttribute("data-i18n") || "";
+        node.textContent = getTranslation(key);
+    }
+
+    const placeholderNodes = document.querySelectorAll("[data-i18n-placeholder]");
+    for (const node of placeholderNodes) {
+        const key = node.getAttribute("data-i18n-placeholder") || "";
+        node.setAttribute("placeholder", getTranslation(key));
+    }
+
+    const ariaNodes = document.querySelectorAll("[data-i18n-aria-label]");
+    for (const node of ariaNodes) {
+        const key = node.getAttribute("data-i18n-aria-label") || "";
+        node.setAttribute("aria-label", getTranslation(key));
+    }
+
+    const languageButtons = document.querySelectorAll("[data-lang]");
+    for (const button of languageButtons) {
+        const buttonLanguage = normalizeLanguage(button.getAttribute("data-lang") || "");
+        const isSelected = buttonLanguage === nextLanguage;
+        button.classList.toggle("is-active", isSelected);
+        button.setAttribute("aria-pressed", isSelected ? "true" : "false");
+    }
+
+    if (activeDfMessenger) {
+        activeDfMessenger.setAttribute("language-code", nextLanguage === "hi" ? "hi" : "en");
+    }
+}
+
+function getTranslation(key) {
+    const translationTable = UI_TRANSLATIONS[activeLanguage] || UI_TRANSLATIONS[DEFAULT_LANGUAGE];
+    return translationTable[key] || UI_TRANSLATIONS[DEFAULT_LANGUAGE][key] || key;
+}
+
+function getInitialLanguage() {
+    try {
+        const storedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+        if (SUPPORTED_LANGUAGES.includes(storedLanguage)) {
+            return storedLanguage;
+        }
+    } catch {
+        // Ignore storage failures and fall back to defaults.
+    }
+
+    const browserLanguage = (navigator.language || "").toLowerCase();
+    if (browserLanguage.startsWith("hi")) {
+        return "hi";
+    }
+
+    return DEFAULT_LANGUAGE;
+}
+
+function persistLanguage(languageCode) {
+    try {
+        window.localStorage.setItem(LANGUAGE_STORAGE_KEY, normalizeLanguage(languageCode));
+    } catch {
+        // Ignore storage failures in restricted browser modes.
+    }
+}
+
+function normalizeLanguage(languageCode) {
+    const normalizedCode = (languageCode || "").toLowerCase();
+    return SUPPORTED_LANGUAGES.includes(normalizedCode) ? normalizedCode : DEFAULT_LANGUAGE;
 }
 
 
